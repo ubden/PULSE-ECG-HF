@@ -62,11 +62,28 @@ class EmailECGProcessor:
         logger.info("📧 Email ECG Processor initialized successfully")
     
     def _get_endpoint_url(self) -> str:
-        """Get endpoint URL from environment"""
+        """Get endpoint URL from environment or construct from HF space"""
+        # Try direct endpoint URL first
         endpoint_url = os.getenv('PULSE_ENDPOINT_URL')
-        if not endpoint_url:
-            raise ValueError("PULSE_ENDPOINT_URL must be set in environment variables")
-        return endpoint_url
+        if endpoint_url:
+            return endpoint_url
+        
+        # Try to construct from HF space name
+        hf_space = os.getenv('HF_SPACE_NAME')
+        if hf_space:
+            return f"https://{hf_space}.hf.space"
+        
+        # If running as part of HF Inference Endpoint, try to detect automatically
+        hf_endpoint_name = os.getenv('ENDPOINT_NAME')
+        hf_region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
+        if hf_endpoint_name:
+            return f"https://{hf_endpoint_name}.{hf_region}.aws.endpoints.huggingface.cloud"
+        
+        # Last resort - try localhost (for development)
+        if os.getenv('DEVELOPMENT_MODE'):
+            return "http://localhost:8000"
+        
+        raise ValueError("PULSE_ENDPOINT_URL, HF_SPACE_NAME, or ENDPOINT_NAME must be set in environment variables")
     
     def _validate_configuration(self):
         """Validate required environment variables"""

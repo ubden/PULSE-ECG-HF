@@ -11,6 +11,8 @@ from io import BytesIO
 from PIL import Image
 import requests
 import time
+import threading
+import os
 
 # Import utilities if available
 try:
@@ -28,6 +30,16 @@ except ImportError:
     deepseek_client = None
     print("⚠️ Utils module not found - performance monitoring and DeepSeek integration disabled")
 
+# Import email processor if available
+try:
+    from email_ecg_processor import EmailECGProcessor
+    EMAIL_PROCESSOR_AVAILABLE = True
+    print("📧 Email ECG Processor module found - email processing will be enabled")
+except ImportError:
+    EMAIL_PROCESSOR_AVAILABLE = False
+    EmailECGProcessor = None
+    print("📭 Email ECG Processor module not found - email processing disabled")
+
 
 class EndpointHandler:
     def __init__(self, path=""):
@@ -44,6 +56,11 @@ class EndpointHandler:
         # Let's see what hardware we're working with
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"🖥️ Running on: {self.device}")
+        
+        # Initialize email processor
+        self.email_processor = None
+        self.email_thread = None
+        self._init_email_processor()
         
         try:
             # First attempt - using pipeline (easiest and most stable way)
@@ -106,6 +123,47 @@ class EndpointHandler:
                 self.use_pipeline = None
         else:
             self.use_pipeline = True
+
+    def _init_email_processor(self):
+        """Initialize email processor in background thread"""
+        if not EMAIL_PROCESSOR_AVAILABLE:
+            print("📭 Email processor not available - skipping email initialization")
+            return
+        
+        # Check if email configuration is available
+        required_email_vars = ['mail_username', 'mail_pw', 'hf_key']
+        missing_vars = [var for var in required_email_vars if not os.getenv(var)]
+        
+        if missing_vars:
+            print(f"📭 Email processor disabled - missing environment variables: {', '.join(missing_vars)}")
+            return
+        
+        try:
+            print("📧 Initializing email processor...")
+            self.email_processor = EmailECGProcessor()
+            
+            # Start email processor in background thread
+            self.email_thread = threading.Thread(
+                target=self._run_email_processor,
+                daemon=True,
+                name="EmailProcessor"
+            )
+            self.email_thread.start()
+            print("✅ Email processor started successfully in background thread")
+            
+        except Exception as e:
+            print(f"❌ Failed to initialize email processor: {e}")
+            self.email_processor = None
+            self.email_thread = None
+    
+    def _run_email_processor(self):
+        """Run email processor in background thread"""
+        try:
+            if self.email_processor:
+                print("📧 Email processor thread started - checking emails every 5 minutes")
+                self.email_processor.run_email_processor(check_interval=300)
+        except Exception as e:
+            print(f"❌ Email processor thread error: {e}")
 
     def process_image_input(self, image_input):
         """
@@ -229,14 +287,36 @@ class EndpointHandler:
     def health_check(self) -> Dict[str, Any]:
         """Health check endpoint"""
         if UTILS_AVAILABLE:
-            return create_health_check()
+            health = create_health_check()
         else:
-            return {
+            health = {
                 'status': 'healthy',
                 'model': 'PULSE-7B',
                 'timestamp': time.time(),
                 'handler_version': '2.0.0'
             }
+        
+        # Add email processor status
+        if EMAIL_PROCESSOR_AVAILABLE and self.email_processor:
+            health['email_processor'] = {
+                'status': 'running',
+                'thread_alive': self.email_thread.is_alive() if self.email_thread else False,
+                'configuration': 'configured'
+            }
+        elif EMAIL_PROCESSOR_AVAILABLE:
+            health['email_processor'] = {
+                'status': 'available_but_not_configured',
+                'thread_alive': False,
+                'configuration': 'missing_environment_variables'
+            }
+        else:
+            health['email_processor'] = {
+                'status': 'not_available',
+                'thread_alive': False,
+                'configuration': 'module_not_found'
+            }
+        
+        return health
 
     def __call__(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
