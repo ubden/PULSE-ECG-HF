@@ -19,7 +19,9 @@ tags:
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-yellow)](https://www.python.org/downloads/)
 
-This repository provides a custom handler for deploying the **PULSE-7B** ECG analysis model as a Hugging Face Inference Endpoint. PULSE-7B is a specialized large language model designed for ECG interpretation and cardiac health analysis.
+This repository provides a custom handler for deploying the **PULSE-7B** ECG analysis model as a Hugging Face Inference Endpoint. PULSE-7B is a specialized large language model designed for ECG interpretation and cardiac health analysis. 
+
+**🚀 Enhanced with DeepSeek Integration**: This handler automatically translates PULSE-7B's English medical analysis into patient-friendly Turkish commentary using DeepSeek AI, providing bilingual ECG interpretation for Turkish healthcare professionals and patients.
 
 ## 🚀 Quick Start
 
@@ -45,7 +47,7 @@ pulse-hf/
 
 ### Step 1: Fork or Clone This Repository
 
-1. Go to [https://huggingface.co/ubden/pulse-hf](https://huggingface.co/ubden/pulse-hf)
+1. Go to [https://huggingface.co/ubden/aimedlab-pulse-hf](https://huggingface.co/ubden/aimedlab-pulse-hf)
 2. Click "Clone repository" or create your own repository
 3. Upload the `handler.py` and `requirements.txt` files
 
@@ -743,12 +745,12 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 
 For issues related to:
 - **Endpoint deployment**: Contact Hugging Face support
-- **Model performance**: Refer to [PULSE-ECG repository](https://github.com/AIMedLab/PULSE)
+- **Model performance**: Refer to [PULSE-ECG repository](https://github.com/ubden/ECG-PULSE)
 - **This handler**: Open an issue in this repository
 
 ## 🙏 Acknowledgments
 
-- PULSE-7B model by [AIMedLab](https://github.com/AIMedLab/PULSE)
+- PULSE-7B model by [AIMedLab](https://github.com/ubden/ECG-PULSE)
 - Hugging Face for the Inference Endpoints platform
 - The open-source community
 
