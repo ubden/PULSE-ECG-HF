@@ -20,6 +20,13 @@ from email.header import decode_header
 from typing import Dict, List, Any, Optional, Tuple
 import logging
 
+# Try to import ruy.app specific configuration
+try:
+    from email_config_ruy import detect_and_configure_ruy_app, RuyAppEmailConfig
+    RUY_CONFIG_AVAILABLE = True
+except ImportError:
+    RUY_CONFIG_AVAILABLE = False
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -36,6 +43,12 @@ class EmailECGProcessor:
     
     def __init__(self):
         """Initialize with environment variables"""
+        # Auto-configure for ruy.app if detected
+        if RUY_CONFIG_AVAILABLE:
+            ruy_config = detect_and_configure_ruy_app()
+            if ruy_config:
+                logger.info("🎯 Applied ruy.app specific configuration")
+        
         self.mail_host = os.getenv('mail_host', 'imap.gmail.com')
         self.mail_username = os.getenv('mail_username')
         self.mail_password = os.getenv('mail_pw')
@@ -46,9 +59,9 @@ class EmailECGProcessor:
         self.endpoint_url = self._get_endpoint_url()
         
         # Email configuration
-        self.smtp_host = self.mail_host.replace('imap', 'smtp')
-        self.smtp_port = 587
-        self.imap_port = 993
+        self.smtp_host = self._get_smtp_host()
+        self.smtp_port = int(os.getenv('SMTP_PORT', '587'))
+        self.imap_port = int(os.getenv('IMAP_PORT', '993'))
         
         # Processing configuration
         self.max_retries = 3
@@ -85,6 +98,38 @@ class EmailECGProcessor:
         
         raise ValueError("PULSE_ENDPOINT_URL, HF_SPACE_NAME, or ENDPOINT_NAME must be set in environment variables")
     
+    def _get_smtp_host(self) -> str:
+        """Get SMTP host based on IMAP host or environment variable"""
+        # Check if SMTP host is explicitly set
+        smtp_host = os.getenv('SMTP_HOST')
+        if smtp_host:
+            return smtp_host
+        
+        # Try to derive SMTP host from IMAP host
+        if not self.mail_host:
+            return 'smtp.gmail.com'  # Default fallback
+        
+        # Common email provider mappings
+        host_mappings = {
+            'imap.gmail.com': 'smtp.gmail.com',
+            'outlook.office365.com': 'smtp-mail.outlook.com',
+            'imap.mail.yahoo.com': 'smtp.mail.yahoo.com',
+            'imap.yandex.com': 'smtp.yandex.com',
+        }
+        
+        # Check for exact matches
+        if self.mail_host in host_mappings:
+            return host_mappings[self.mail_host]
+        
+        # For custom domains, try common patterns
+        if 'imap.' in self.mail_host:
+            return self.mail_host.replace('imap.', 'smtp.')
+        elif 'mail.' in self.mail_host:
+            return self.mail_host.replace('mail.', 'smtp.')
+        else:
+            # If it's a custom domain, try adding smtp prefix
+            return f"smtp.{self.mail_host}"
+    
     def _validate_configuration(self):
         """Validate required environment variables"""
         required_vars = {
@@ -100,16 +145,140 @@ class EmailECGProcessor:
         logger.info("✅ Configuration validation passed")
     
     def connect_to_email(self) -> imaplib.IMAP4_SSL:
-        """Connect to email server"""
-        try:
-            mail = imaplib.IMAP4_SSL(self.mail_host, self.imap_port)
-            mail.login(self.mail_username, self.mail_password)
-            mail.select('INBOX')
-            logger.info(f"📧 Connected to email server: {self.mail_host}")
-            return mail
-        except Exception as e:
-            logger.error(f"❌ Failed to connect to email server: {e}")
-            raise
+        """Connect to email server with multiple retry strategies"""
+        
+        # Check if this is ruy.app and get specific configurations
+        if RUY_CONFIG_AVAILABLE and 'ruy.app' in self.mail_username.lower():
+            ruy_settings = RuyAppEmailConfig.get_email_settings()
+            connection_attempts = [
+                # Try main ruy.app configuration
+                {'host': ruy_settings['imap_host'], 'use_ssl': True, 'port': ruy_settings['imap_port'], 'timeout': 60},
+            ]
+            
+            # Add alternative configurations
+            for alt in ruy_settings['alternatives']:
+                connection_attempts.append({
+                    'host': alt['imap_host'],
+                    'use_ssl': True,
+                    'port': alt['imap_port'],
+                    'timeout': 60
+                })
+        else:
+            # Standard connection attempts for other providers
+            connection_attempts = [
+                # Attempt 1: Standard SSL connection
+                {'host': self.mail_host, 'use_ssl': True, 'port': self.imap_port, 'timeout': 30},
+                # Attempt 2: Try alternative SSL port
+                {'host': self.mail_host, 'use_ssl': True, 'port': 993, 'timeout': 60},
+                # Attempt 3: Try with different timeout
+                {'host': self.mail_host, 'use_ssl': True, 'port': self.imap_port, 'timeout': 120},
+            ]
+        
+        last_error = None
+        
+        for i, attempt in enumerate(connection_attempts):
+            try:
+                host = attempt.get('host', self.mail_host)
+                logger.info(f"🔄 Connection attempt {i+1}: {host}:{attempt['port']} (SSL: {attempt['use_ssl']}, Timeout: {attempt['timeout']}s)")
+                
+                if attempt['use_ssl']:
+                    # Try SSL connection
+                    mail = imaplib.IMAP4_SSL(host, attempt['port'])
+                    # Set socket timeout
+                    mail.sock.settimeout(attempt['timeout'])
+                else:
+                    # Try non-SSL connection (fallback)
+                    mail = imaplib.IMAP4(host, attempt['port'])
+                    mail.sock.settimeout(attempt['timeout'])
+                
+                # Try to login
+                mail.login(self.mail_username, self.mail_password)
+                mail.select('INBOX')
+                
+                logger.info(f"✅ Connected to email server: {host}:{attempt['port']}")
+                return mail
+                
+            except Exception as e:
+                last_error = e
+                logger.warning(f"⚠️ Connection attempt {i+1} failed: {e}")
+                
+                # Clean up failed connection
+                try:
+                    if 'mail' in locals():
+                        mail.logout()
+                except:
+                    pass
+        
+        # All attempts failed
+        logger.error(f"❌ All connection attempts failed. Last error: {last_error}")
+        
+        # Provide helpful troubleshooting info
+        logger.info("🔧 Troubleshooting tips:")
+        logger.info(f"   - Check if IMAP is enabled for {self.mail_username}")
+        logger.info(f"   - Verify mail_host: {self.mail_host}")
+        logger.info(f"   - Check firewall/network connectivity")
+        logger.info(f"   - Try different ports: 993, 143")
+        
+        raise last_error
+    
+    def _send_email_with_retry(self, msg):
+        """Send email with retry logic for different SMTP configurations"""
+        
+        # Get SMTP configurations to try
+        if RUY_CONFIG_AVAILABLE and 'ruy.app' in self.mail_username.lower():
+            ruy_settings = RuyAppEmailConfig.get_email_settings()
+            smtp_attempts = [
+                {'host': ruy_settings['smtp_host'], 'port': ruy_settings['smtp_port'], 'use_ssl': True},
+            ]
+            
+            # Add alternatives
+            for alt in ruy_settings['alternatives']:
+                smtp_attempts.append({
+                    'host': alt['smtp_host'],
+                    'port': alt['smtp_port'],
+                    'use_ssl': alt['smtp_port'] == 465  # SSL for port 465, STARTTLS for 587
+                })
+        else:
+            # Standard SMTP configurations
+            smtp_attempts = [
+                {'host': self.smtp_host, 'port': self.smtp_port, 'use_ssl': self.smtp_port == 465},
+                {'host': self.smtp_host, 'port': 587, 'use_ssl': False},  # Try STARTTLS
+                {'host': self.smtp_host, 'port': 465, 'use_ssl': True},   # Try SSL
+            ]
+        
+        last_error = None
+        
+        for i, attempt in enumerate(smtp_attempts):
+            try:
+                logger.info(f"🔄 SMTP attempt {i+1}: {attempt['host']}:{attempt['port']} (SSL: {attempt['use_ssl']})")
+                
+                if attempt['use_ssl']:
+                    # Use SSL connection
+                    server = smtplib.SMTP_SSL(attempt['host'], attempt['port'])
+                else:
+                    # Use STARTTLS
+                    server = smtplib.SMTP(attempt['host'], attempt['port'])
+                    server.starttls()
+                
+                server.login(self.mail_username, self.mail_password)
+                server.send_message(msg)
+                server.quit()
+                
+                logger.info(f"✅ Email sent via {attempt['host']}:{attempt['port']}")
+                return
+                
+            except Exception as e:
+                last_error = e
+                logger.warning(f"⚠️ SMTP attempt {i+1} failed: {e}")
+                
+                try:
+                    if 'server' in locals():
+                        server.quit()
+                except:
+                    pass
+        
+        # All attempts failed
+        raise last_error
     
     def get_unread_emails(self, mail: imaplib.IMAP4_SSL) -> List[str]:
         """Get list of unread email IDs"""
@@ -327,12 +496,8 @@ Geçmiş olsun! 🙏
             
             msg.attach(MIMEText(body, 'plain', 'utf-8'))
             
-            # Send email
-            server = smtplib.SMTP(self.smtp_host, self.smtp_port)
-            server.starttls()
-            server.login(self.mail_username, self.mail_password)
-            server.send_message(msg)
-            server.quit()
+            # Send email with improved connection handling
+            self._send_email_with_retry(msg)
             
             logger.info(f"✅ Analysis result sent to {recipient}")
             return True
@@ -389,11 +554,7 @@ Problem devam ederse lütfen sistem yöneticisi ile iletişime geçin.
             
             msg.attach(MIMEText(body, 'plain', 'utf-8'))
             
-            server = smtplib.SMTP(self.smtp_host, self.smtp_port)
-            server.starttls()
-            server.login(self.mail_username, self.mail_password)
-            server.send_message(msg)
-            server.quit()
+            self._send_email_with_retry(msg)
             
             logger.info(f"📧 Error notification sent to {recipient}")
             return True
