@@ -1,0 +1,43 @@
+# PULSE-7B Email ECG Processor Docker Container
+# Ubden® Team - Email-based ECG Analysis Service
+
+FROM python:3.9-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application files
+COPY email_ecg_processor.py .
+COPY start_email_processor.py .
+COPY utils.py .
+
+# Create logs directory
+RUN mkdir -p /app/logs
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash app
+RUN chown -R app:app /app
+USER app
+
+# Health check
+HEALTHCHECK --interval=5m --timeout=30s --start-period=1m --retries=3 \
+    CMD python -c "import email_ecg_processor; print('Service healthy')" || exit 1
+
+# Default command
+CMD ["python", "start_email_processor.py", "300"]

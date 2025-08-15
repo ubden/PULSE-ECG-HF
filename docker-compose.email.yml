@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  pulse-email-processor:
+    build:
+      context: .
+      dockerfile: Dockerfile.email
+    container_name: pulse-ecg-email-processor
+    restart: unless-stopped
+    
+    environment:
+      # Email Configuration (Required)
+      - mail_host=${MAIL_HOST:-imap.gmail.com}
+      - mail_username=${MAIL_USERNAME}
+      - mail_pw=${MAIL_PASSWORD}
+      
+      # HuggingFace Configuration (Required)
+      - hf_key=${HF_TOKEN}
+      - PULSE_ENDPOINT_URL=${PULSE_ENDPOINT_URL}
+      
+      # DeepSeek Configuration (Optional)
+      - deep_key=${DEEPSEEK_API_KEY}
+      
+      # Processing Configuration
+      - CHECK_INTERVAL=${CHECK_INTERVAL:-300}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    
+    volumes:
+      # Persist logs
+      - ./logs:/app/logs
+      
+      # Optional: Mount config files
+      - ./config:/app/config:ro
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import email_ecg_processor; print('healthy')"]
+      interval: 5m
+      timeout: 30s
+      retries: 3
+      start_period: 1m
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Optional: Add monitoring service
+  pulse-monitor:
+    image: prom/prometheus:latest
+    container_name: pulse-ecg-monitor
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    profiles:
+      - monitoring
+
+volumes:
+  logs:
+    driver: local
+
+networks:
+  default:
+    name: pulse-ecg-network

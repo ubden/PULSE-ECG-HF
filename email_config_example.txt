@@ -1,0 +1,36 @@
+# PULSE-7B Email ECG Processor Environment Configuration
+# Copy these to your environment variables or .env file
+
+# ============================================================================
+# EMAIL CONFIGURATION (Required)
+# ============================================================================
+
+mail_host=imap.gmail.com
+mail_username=your-email@gmail.com
+mail_pw=your-app-password-here
+
+# Note: For Gmail, use App Password, not your regular password
+# 1. Enable 2-Factor Authentication
+# 2. Go to: Google Account → Security → App passwords
+# 3. Generate App Password for "Mail"
+# 4. Use that 16-character password here
+
+# ============================================================================
+# HUGGINGFACE CONFIGURATION (Required)
+# ============================================================================
+
+hf_key=hf_your_token_here
+PULSE_ENDPOINT_URL=https://pzksrji48axzh2v4.us-east-1.aws.endpoints.huggingface.cloud
+
+# ============================================================================
+# DEEPSEEK CONFIGURATION (Optional - for Turkish commentary)
+# ============================================================================
+
+deep_key=sk-your-deepseek-api-key-here
+
+# ============================================================================
+# PROCESSING CONFIGURATION (Optional)
+# ============================================================================
+
+CHECK_INTERVAL=300
+LOG_LEVEL=INFO
