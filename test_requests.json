@@ -1,0 +1,220 @@
+{
+  "test_requests": {
+    "image_url_request": {
+      "description": "ECG analizi için image URL ile istek",
+      "request": {
+        "inputs": {
+          "query": "What are the main features and diagnosis in this ECG image? Provide a concise, clinical answer.",
+          "image": "https://i.imgur.com/7uuejqO.jpeg"
+        },
+        "parameters": {
+          "max_new_tokens": 512,
+          "temperature": 0.2,
+          "top_p": 0.9,
+          "repetition_penalty": 1.05,
+          "stop": ["</s>"],
+          "return_full_text": false
+        }
+      }
+    },
+    
+    "base64_request": {
+      "description": "ECG analizi için base64 encoded image ile istek",
+      "request": {
+        "inputs": {
+          "query": "What are the main features and diagnosis in this ECG image? Provide a concise, clinical answer.",
+          "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+        },
+        "parameters": {
+          "max_new_tokens": 512,
+          "temperature": 0.2,
+          "top_p": 0.9,
+          "repetition_penalty": 1.05,
+          "stop": ["</s>"],
+          "return_full_text": false
+        }
+      }
+    },
+
+    "minimal_url_request": {
+      "description": "Minimal parametrelerle image URL isteği",
+      "request": {
+        "inputs": {
+          "query": "Analyze this ECG image.",
+          "image": "https://i.imgur.com/7uuejqO.jpeg"
+        },
+        "parameters": {
+          "temperature": 0.2
+        }
+      }
+    },
+
+    "minimal_base64_request": {
+      "description": "Minimal parametrelerle base64 isteği",
+      "request": {
+        "inputs": {
+          "query": "Analyze this ECG image.",
+          "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+        },
+        "parameters": {
+          "temperature": 0.2
+        }
+      }
+    },
+
+    "text_only_request": {
+      "description": "Sadece text ile istek (image olmadan)",
+      "request": {
+        "inputs": {
+          "query": "What are the common causes of atrial fibrillation?"
+        },
+        "parameters": {
+          "max_new_tokens": 256,
+          "temperature": 0.3,
+          "top_p": 0.9
+        }
+      }
+    },
+
+    "advanced_parameters_request": {
+      "description": "Gelişmiş parametrelerle image URL isteği",
+      "request": {
+        "inputs": {
+          "query": "Provide detailed ECG analysis including rhythm, rate, intervals, and potential abnormalities.",
+          "image": "https://i.imgur.com/7uuejqO.jpeg"
+        },
+        "parameters": {
+          "max_new_tokens": 1024,
+          "temperature": 0.1,
+          "top_p": 0.95,
+          "repetition_penalty": 1.1,
+          "stop": ["</s>", "\n\n"],
+          "return_full_text": false,
+          "do_sample": true
+        }
+      }
+    },
+
+    "deepseek_enabled_request": {
+      "description": "DeepSeek Türkçe yorum özelliği aktif - Image URL",
+      "request": {
+        "inputs": {
+          "query": "What are the main features and diagnosis in this ECG image? Provide a concise, clinical answer.",
+          "image": "https://i.imgur.com/7uuejqO.jpeg"
+        },
+        "parameters": {
+          "max_new_tokens": 512,
+          "temperature": 0.2,
+          "top_p": 0.9,
+          "repetition_penalty": 1.05,
+          "enable_turkish_commentary": true,
+          "deepseek_timeout": 30
+        }
+      }
+    },
+
+    "deepseek_enabled_base64_request": {
+      "description": "DeepSeek Türkçe yorum özelliği aktif - Base64",
+      "request": {
+        "inputs": {
+          "query": "What are the main features and diagnosis in this ECG image? Provide a concise, clinical answer.",
+          "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+        },
+        "parameters": {
+          "max_new_tokens": 512,
+          "temperature": 0.2,
+          "enable_turkish_commentary": true,
+          "deepseek_timeout": 25
+        }
+      }
+    },
+
+    "deepseek_disabled_request": {
+      "description": "DeepSeek Türkçe yorum özelliği deaktif",
+      "request": {
+        "inputs": {
+          "query": "Analyze this ECG image briefly.",
+          "image": "https://i.imgur.com/7uuejqO.jpeg"
+        },
+        "parameters": {
+          "temperature": 0.2,
+          "enable_turkish_commentary": false
+        }
+      }
+    }
+  },
+
+  "expected_response_format": {
+    "description": "Beklenen response formatı (DeepSeek aktif)",
+    "format": [
+      {
+        "generated_text": "Answer: This ECG image shows a sinus rhythm with a normal heart rate...",
+        "model": "PULSE-7B",
+        "processing_method": "pipeline",
+        "comment_text": "Bu EKG sonucu normal sinüs ritmi göstermektedir. Kalp atış hızı normaldir ve düzenli bir ritim görülmektedir...",
+        "commentary_model": "deepseek-chat",
+        "commentary_tokens": 85,
+        "commentary_status": "success"
+      }
+    ]
+  },
+
+  "expected_response_format_no_commentary": {
+    "description": "Beklenen response formatı (DeepSeek deaktif)",
+    "format": [
+      {
+        "generated_text": "Answer: This ECG image shows a sinus rhythm with a normal heart rate...",
+        "model": "PULSE-7B",
+        "processing_method": "pipeline"
+      }
+    ]
+  },
+
+  "error_response_format": {
+    "description": "Hata durumunda response formatı",
+    "format": [
+      {
+        "generated_text": "",
+        "error": "Error message here...",
+        "model": "PULSE-7B",
+        "handler": "Ubden® Team Enhanced Handler",
+        "success": false
+      }
+    ]
+  },
+
+  "usage_notes": {
+    "supported_image_formats": [
+      "JPEG", "PNG", "GIF", "BMP", "WebP"
+    ],
+    "supported_input_methods": [
+      "HTTP/HTTPS URL",
+      "Base64 encoded with data URI prefix",
+      "Raw base64 string"
+    ],
+    "parameter_limits": {
+      "max_new_tokens": "1-2048",
+      "temperature": "0.01-2.0",
+      "top_p": "0.01-1.0",
+      "repetition_penalty": "1.0-2.0"
+    },
+    "query_field_alternatives": [
+      "query", "text", "prompt"
+    ],
+    "deepseek_integration": {
+      "enable_turkish_commentary": "true/false (default: true)",
+      "deepseek_timeout": "10-60 seconds (default: 30)",
+      "environment_variable": "deep_key (DeepSeek API key)",
+      "commentary_status_values": [
+        "success", "failed", "unavailable", "api_key_missing", "no_text"
+      ]
+    },
+    "response_fields_with_commentary": [
+      "generated_text", "model", "processing_method",
+      "comment_text", "commentary_model", "commentary_tokens", "commentary_status"
+    ],
+    "response_fields_without_commentary": [
+      "generated_text", "model", "processing_method"
+    ]
+  }
+}
