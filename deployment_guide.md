@@ -114,14 +114,15 @@ print(f"GPU Memory: {torch.cuda.memory_allocated()/1024**3:.2f}GB")
 
 1. **"llava_llama architecture not recognized" Error**
    ```bash
-   # Solution 1: Update transformers
-   pip install --upgrade transformers>=4.44.0
+   # PULSE-7B Solution: Install PULSE's LLaVA implementation
+   pip install git+https://github.com/AIMedLab/PULSE.git#subdirectory=LLaVA
    
-   # Solution 2: Install from source
+   # Also install development transformers
    pip install git+https://github.com/huggingface/transformers.git
    
-   # Solution 3: Add to requirements.txt
+   # Or add both to requirements.txt:
    git+https://github.com/huggingface/transformers.git
+   git+https://github.com/AIMedLab/PULSE.git#subdirectory=LLaVA
    ```
 
 2. **CUDA Out of Memory**

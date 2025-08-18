@@ -14,6 +14,10 @@ requests>=2.28.0
 # LLaVA/Vision model dependencies
 timm>=0.9.0
 
+# PULSE-7B specific dependencies (LLaVA implementation)
+# Install PULSE's LLaVA implementation for proper model loading
+git+https://github.com/AIMedLab/PULSE.git#subdirectory=LLaVA
+
 # Optional performance improvements
 flash-attn>=2.0.0; sys_platform != "darwin"
 bitsandbytes>=0.41.0; sys_platform != "darwin"

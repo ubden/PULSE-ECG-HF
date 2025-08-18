@@ -72,22 +72,52 @@ class EndpointHandler:
         self.pipe = None
         self.use_pipeline = None
         
-        # Approach 1: Try LLaVA with AutoModel (most flexible)
+        # Approach 1: Try PULSE's own LLaVA implementation (recommended)
         try:
-            from transformers import AutoModel, AutoProcessor
+            print("📦 Attempting to load with PULSE's LLaVA implementation...")
             
-            print("📦 Attempting to load with AutoModel + AutoProcessor...")
-            self.processor = AutoProcessor.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
-            self.model = AutoModel.from_pretrained(
-                "PULSE-ECG/PULSE-7B",
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                device_map="auto",
-                low_cpu_mem_usage=True,
-                trust_remote_code=True
-            )
-            self.model.eval()
-            self.use_pipeline = False
-            print("✅ Model loaded successfully with AutoModel + AutoProcessor!")
+            # Try to use PULSE's own LLaVA loader
+            try:
+                from llava.model.builder import load_pretrained_model
+                from llava.mm_utils import get_model_name_from_path
+                
+                print("🔧 Using PULSE's LLaVA loader...")
+                model_path = "PULSE-ECG/PULSE-7B"
+                model_name = get_model_name_from_path(model_path)
+                
+                self.tokenizer, self.model, self.image_processor, self.context_len = load_pretrained_model(
+                    model_path=model_path,
+                    model_base=None,
+                    model_name=model_name,
+                    load_8bit=False,
+                    load_4bit=False,
+                    device_map="auto",
+                    device=self.device
+                )
+                
+                self.processor = self.image_processor  # Use LLaVA's image processor
+                self.use_pipeline = False
+                print("✅ Model loaded successfully with PULSE's LLaVA implementation!")
+                
+            except ImportError as import_error:
+                print(f"⚠️ PULSE LLaVA modules not available: {import_error}")
+                print("💡 Installing PULSE LLaVA dependencies...")
+                
+                # Fallback to transformers approach
+                from transformers import AutoModel, AutoProcessor
+                
+                print("📦 Falling back to AutoModel + AutoProcessor...")
+                self.processor = AutoProcessor.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
+                self.model = AutoModel.from_pretrained(
+                    "PULSE-ECG/PULSE-7B",
+                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                    device_map="auto",
+                    low_cpu_mem_usage=True,
+                    trust_remote_code=True
+                )
+                self.model.eval()
+                self.use_pipeline = False
+                print("✅ Model loaded successfully with AutoModel + AutoProcessor!")
             
         except Exception as e1:
             print(f"⚠️ AutoModel approach failed: {e1}")
@@ -565,47 +595,99 @@ class EndpointHandler:
             # Manual generation mode (LLaVA with vision support)
             elif self.model is not None:
                 if hasattr(self, 'processor') and self.processor is not None:
-                    # LLaVA model with vision support
-                    print("🔥 Using LLaVA model with vision capabilities")
+                    # PULSE LLaVA model with vision support
+                    print("🔥 Using PULSE LLaVA model with vision capabilities")
                     
                     if image is not None:
-                        # Process both image and text with LLaVA processor
-                        inputs = self.processor(text, image, return_tensors="pt")
-                        print(f"🖼️ LLaVA processing image + text: '{text[:50]}...'")
+                        print(f"🖼️ PULSE LLaVA processing image + text: '{text[:50]}...'")
+                        
+                        # Use PULSE LLaVA's eval_model approach
+                        try:
+                            from llava.eval.run_llava import eval_model
+                            from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+                            from llava.conversation import conv_templates, SeparatorStyle
+                            from llava.mm_utils import tokenizer_image_token, process_images, get_model_name_from_path
+                            
+                            # Process the image
+                            image_tensor = process_images([image], self.image_processor, self.model.config)
+                            image_tensor = image_tensor.to(self.model.device, dtype=torch.float16)
+                            
+                            # Prepare conversation
+                            conv_mode = "llava_v1"  # Default conversation mode
+                            conv = conv_templates[conv_mode].copy()
+                            
+                            # Add image token to the conversation
+                            inp = DEFAULT_IMAGE_TOKEN + '\n' + text
+                            conv.append_message(conv.roles[0], inp)
+                            conv.append_message(conv.roles[1], None)
+                            prompt = conv.get_prompt()
+                            
+                            # Tokenize
+                            input_ids = tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').unsqueeze(0).to(self.model.device)
+                            
+                            # Generate
+                            with torch.inference_mode():
+                                output_ids = self.model.generate(
+                                    input_ids,
+                                    images=image_tensor,
+                                    do_sample=do_sample,
+                                    temperature=temperature,
+                                    top_p=top_p,
+                                    max_new_tokens=max_new_tokens,
+                                    use_cache=True
+                                )
+                            
+                            # Decode response
+                            generated_text = self.tokenizer.decode(output_ids[0, input_ids.shape[1]:], skip_special_tokens=True).strip()
+                            print(f"✅ PULSE LLaVA generated response: {len(generated_text)} characters")
+                            
+                        except ImportError as e:
+                            print(f"⚠️ PULSE LLaVA modules missing: {e}")
+                            print("🔄 Falling back to standard processor...")
+                            
+                            # Fallback to standard processing
+                            inputs = self.processor(text, image, return_tensors="pt")
+                            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                            
+                            with torch.no_grad():
+                                outputs = self.model.generate(
+                                    **inputs,
+                                    max_new_tokens=max_new_tokens,
+                                    temperature=temperature,
+                                    top_p=top_p,
+                                    do_sample=do_sample,
+                                    repetition_penalty=repetition_penalty,
+                                )
+                            
+                            generated_text = self.processor.decode(outputs[0], skip_special_tokens=True)
+                            if text in generated_text:
+                                generated_text = generated_text.replace(text, "").strip()
+                                
                     else:
                         # Text-only processing
-                        inputs = self.processor(text, return_tensors="pt")
-                        print(f"📝 LLaVA processing text-only: '{text[:50]}...'")
-                    
-                    # Move inputs to device
-                    inputs = {k: v.to(self.device) for k, v in inputs.items()}
-                    
-                    # Generate response
-                    with torch.no_grad():
-                        generation_kwargs = {
-                            **inputs,
-                            "max_new_tokens": max_new_tokens,
-                            "temperature": temperature,
-                            "top_p": top_p,
-                            "do_sample": do_sample,
-                            "repetition_penalty": repetition_penalty,
-                        }
+                        print(f"📝 PULSE LLaVA processing text-only: '{text[:50]}...'")
                         
-                        outputs = self.model.generate(**generation_kwargs)
-                    
-                    # Decode the response
-                    generated_text = self.processor.decode(outputs[0], skip_special_tokens=True)
-                    
-                    # Clean up the generated text (remove input prompt)
-                    if text in generated_text:
-                        generated_text = generated_text.replace(text, "").strip()
+                        # Use tokenizer for text-only
+                        input_ids = self.tokenizer.encode(text, return_tensors="pt").to(self.device)
+                        
+                        with torch.no_grad():
+                            outputs = self.model.generate(
+                                input_ids,
+                                max_new_tokens=max_new_tokens,
+                                temperature=temperature,
+                                top_p=top_p,
+                                do_sample=do_sample,
+                                repetition_penalty=repetition_penalty,
+                            )
+                        
+                        generated_text = self.tokenizer.decode(outputs[0, input_ids.shape[1]:], skip_special_tokens=True).strip()
                     
                     # Clean up any remaining stop sequences
                     for stop_seq in stop_sequences:
                         if generated_text.endswith(stop_seq):
                             generated_text = generated_text[:-len(stop_seq)].rstrip()
                     
-                    print(f"✅ LLaVA generated response: {len(generated_text)} characters")
+                    print(f"✅ Generated response: {len(generated_text)} characters")
                     
                 else:
                     # Fallback to text-only processing
