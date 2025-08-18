@@ -46,66 +46,53 @@ class EndpointHandler:
         print(f"🖥️ Running on: {self.device}")
         
         try:
-            # First attempt - using pipeline (easiest and most stable way)
-            from transformers import pipeline
+            # For LLaVA models, we need to load them properly with vision capabilities
+            from transformers import AutoProcessor, LlavaForConditionalGeneration
             
-            print("📦 Fetching model from HuggingFace Hub...")
-            self.pipe = pipeline(
-                "text-generation",
-                model="PULSE-ECG/PULSE-7B",
+            print("📦 Loading LLaVA model with vision capabilities...")
+            self.processor = AutoProcessor.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
+            self.model = LlavaForConditionalGeneration.from_pretrained(
+                "PULSE-ECG/PULSE-7B",
                 torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                device=0 if torch.cuda.is_available() else -1,
-                trust_remote_code=True,
-                model_kwargs={
-                    "low_cpu_mem_usage": True,
-                    "use_safetensors": True
-                }
+                device_map="auto",
+                low_cpu_mem_usage=True,
+                trust_remote_code=True
             )
-            print("✅ Model loaded successfully via pipeline!")
+            self.model.eval()
+            self.use_pipeline = False
+            print("✅ LLaVA model loaded successfully with vision support!")
             
         except Exception as e:
-            print(f"⚠️ Pipeline didn't work out: {e}")
-            print("🔄 Let me try a different approach...")
+            print(f"⚠️ LLaVA loading failed: {e}")
+            print("🔄 Falling back to pipeline approach...")
             
             try:
-                # Plan B - load model and tokenizer separately
-                from transformers import AutoTokenizer, LlamaForCausalLM
+                # Fallback - using pipeline but aware it won't handle images properly
+                from transformers import pipeline
                 
-                # Get the tokenizer ready
-                print("📖 Setting up tokenizer...")
-                self.tokenizer = AutoTokenizer.from_pretrained(
-                    "PULSE-ECG/PULSE-7B",
-                    trust_remote_code=True
-                )
-                
-                # Load the model as Llama (it works, trust me!)
-                print("🧠 Loading the model as Llama...")
-                self.model = LlamaForCausalLM.from_pretrained(
-                    "PULSE-ECG/PULSE-7B",
+                print("📦 Fetching model from HuggingFace Hub...")
+                self.pipe = pipeline(
+                    "text-generation",
+                    model="PULSE-ECG/PULSE-7B",
                     torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                    device_map="auto",
-                    low_cpu_mem_usage=True,
-                    trust_remote_code=True
+                    device=0 if torch.cuda.is_available() else -1,
+                    trust_remote_code=True,
+                    model_kwargs={
+                        "low_cpu_mem_usage": True,
+                        "use_safetensors": True
+                    }
                 )
-                
-                # Quick fix for padding token if it's missing
-                if self.tokenizer.pad_token is None:
-                    self.tokenizer.pad_token = self.tokenizer.eos_token
-                    self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-                
-                self.model.eval()
-                self.use_pipeline = False
-                print("✅ Model loaded successfully via direct loading!")
+                self.use_pipeline = True
+                self.processor = None
+                print("✅ Model loaded via pipeline (text-only mode)!")
                 
             except Exception as e2:
-                print(f"😓 That didn't work either: {e2}")
+                print(f"😓 Pipeline also failed: {e2}")
                 # If all else fails, we'll handle it gracefully
                 self.pipe = None
                 self.model = None
-                self.tokenizer = None
+                self.processor = None
                 self.use_pipeline = None
-        else:
-            self.use_pipeline = True
 
     def process_image_input(self, image_input):
         """
@@ -292,11 +279,9 @@ class EndpointHandler:
                     
                     if image:
                         print(f"✅ Image processed successfully: {image.size[0]}x{image.size[1]} pixels")
-                        # Add image context to the prompt for better processing
-                        if text:
-                            text = f"<image>\nUser query: {text}"
-                        else:
-                            text = "<image>\nAnalyze this medical image."
+                        # Store the image for later use with LLaVA model
+                        # Don't modify the text prompt - let LLaVA handle the image-text combination
+                        print(f"🖼️ Image will be passed to model: {image.size} pixels")
             else:
                 # Simple string input
                 text = str(inputs)
@@ -308,7 +293,7 @@ class EndpointHandler:
             parameters = data.get("parameters", {})
             
             # Check if Turkish commentary is requested
-            enable_turkish_commentary = parameters.get("enable_turkish_commentary", True)  # Default true
+            enable_turkish_commentary = parameters.get("enable_turkish_commentary", False)  # Default false
             deepseek_timeout = parameters.get("deepseek_timeout", 30)
             
             # Use utils for parameter sanitization if available
@@ -395,67 +380,101 @@ class EndpointHandler:
                     
                     return [result_dict]
             
-            # Manual generation mode
+            # Manual generation mode (LLaVA with vision support)
             else:
-                # Tokenize the input
-                encoded = self.tokenizer(
-                    text,
-                    return_tensors="pt",
-                    truncation=True,
-                    max_length=4096  # Increased context length
-                )
-                
-                input_ids = encoded["input_ids"].to(self.device)
-                attention_mask = encoded.get("attention_mask")
-                if attention_mask is not None:
-                    attention_mask = attention_mask.to(self.device)
-                
-                # Prepare stop token IDs
-                stop_token_ids = []
-                if stop_sequences:
+                if hasattr(self, 'processor') and self.processor is not None:
+                    # LLaVA model with vision support
+                    print("🔥 Using LLaVA model with vision capabilities")
+                    
+                    if image is not None:
+                        # Process both image and text with LLaVA processor
+                        inputs = self.processor(text, image, return_tensors="pt")
+                        print(f"🖼️ LLaVA processing image + text: '{text[:50]}...'")
+                    else:
+                        # Text-only processing
+                        inputs = self.processor(text, return_tensors="pt")
+                        print(f"📝 LLaVA processing text-only: '{text[:50]}...'")
+                    
+                    # Move inputs to device
+                    inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                    
+                    # Generate response
+                    with torch.no_grad():
+                        generation_kwargs = {
+                            **inputs,
+                            "max_new_tokens": max_new_tokens,
+                            "temperature": temperature,
+                            "top_p": top_p,
+                            "do_sample": do_sample,
+                            "repetition_penalty": repetition_penalty,
+                        }
+                        
+                        outputs = self.model.generate(**generation_kwargs)
+                    
+                    # Decode the response
+                    generated_text = self.processor.decode(outputs[0], skip_special_tokens=True)
+                    
+                    # Clean up the generated text (remove input prompt)
+                    if text in generated_text:
+                        generated_text = generated_text.replace(text, "").strip()
+                    
+                    # Clean up any remaining stop sequences
                     for stop_seq in stop_sequences:
-                        stop_tokens = self.tokenizer.encode(stop_seq, add_special_tokens=False)
-                        if stop_tokens:
-                            stop_token_ids.extend(stop_tokens)
-                
-                # Generate the response
-                with torch.no_grad():
-                    generation_kwargs = {
-                        "input_ids": input_ids,
-                        "attention_mask": attention_mask,
-                        "max_new_tokens": max_new_tokens,
-                        "temperature": temperature,
-                        "top_p": top_p,
-                        "do_sample": do_sample,
-                        "repetition_penalty": repetition_penalty,
-                        "pad_token_id": self.tokenizer.pad_token_id,
-                        "eos_token_id": self.tokenizer.eos_token_id
-                    }
+                        if generated_text.endswith(stop_seq):
+                            generated_text = generated_text[:-len(stop_seq)].rstrip()
                     
-                    # Add stop token IDs if we have them
-                    if stop_token_ids:
-                        generation_kwargs["eos_token_id"] = stop_token_ids + [self.tokenizer.eos_token_id]
+                    print(f"✅ LLaVA generated response: {len(generated_text)} characters")
                     
-                    outputs = self.model.generate(**generation_kwargs)
-                
-                # Decode only the new tokens (not the input)
-                generated_ids = outputs[0][input_ids.shape[-1]:]
-                generated_text = self.tokenizer.decode(
-                    generated_ids,
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=True
-                )
-                
-                # Clean up any remaining stop sequences
-                for stop_seq in stop_sequences:
-                    if generated_text.endswith(stop_seq):
-                        generated_text = generated_text[:-len(stop_seq)].rstrip()
+                else:
+                    # Fallback to text-only processing (shouldn't happen with proper LLaVA loading)
+                    print("⚠️ No processor available, falling back to text-only mode")
+                    
+                    # This is the old tokenizer-based approach (without image support)
+                    if not hasattr(self, 'tokenizer') or self.tokenizer is None:
+                        return [{
+                            "generated_text": "",
+                            "error": "No tokenizer available for text processing",
+                            "model": "PULSE-7B",
+                            "processing_method": "manual"
+                        }]
+                    
+                    encoded = self.tokenizer(
+                        text,
+                        return_tensors="pt",
+                        truncation=True,
+                        max_length=4096
+                    )
+                    
+                    input_ids = encoded["input_ids"].to(self.device)
+                    attention_mask = encoded.get("attention_mask")
+                    if attention_mask is not None:
+                        attention_mask = attention_mask.to(self.device)
+                    
+                    with torch.no_grad():
+                        outputs = self.model.generate(
+                            input_ids=input_ids,
+                            attention_mask=attention_mask,
+                            max_new_tokens=max_new_tokens,
+                            temperature=temperature,
+                            top_p=top_p,
+                            do_sample=do_sample,
+                            repetition_penalty=repetition_penalty,
+                            pad_token_id=self.tokenizer.pad_token_id,
+                            eos_token_id=self.tokenizer.eos_token_id
+                        )
+                    
+                    generated_ids = outputs[0][input_ids.shape[-1]:]
+                    generated_text = self.tokenizer.decode(
+                        generated_ids,
+                        skip_special_tokens=True,
+                        clean_up_tokenization_spaces=True
+                    )
                 
                 success = True
                 result = {
                     "generated_text": generated_text.strip(),
                     "model": "PULSE-7B",
-                    "processing_method": "manual"
+                    "processing_method": "llava_vision" if (hasattr(self, 'processor') and self.processor is not None) else "manual"
                 }
                 
                 # Add Turkish commentary if requested

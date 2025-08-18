@@ -150,7 +150,7 @@ curl -X POST "https://YOUR-ENDPOINT.endpoints.huggingface.cloud" \
   }'
 ```
 
-#### Text-only Request (DeepSeek Türkçe Yorum Aktif)
+#### Text-only Request (DeepSeek Türkçe Yorum Deaktif - Default)
 ```bash
 curl -X POST "https://YOUR-ENDPOINT.endpoints.huggingface.cloud" \
   -H "Authorization: Bearer YOUR_HF_TOKEN" \
@@ -162,8 +162,7 @@ curl -X POST "https://YOUR-ENDPOINT.endpoints.huggingface.cloud" \
     "parameters": {
       "max_new_tokens": 256,
       "temperature": 0.7,
-      "top_p": 0.95,
-      "enable_turkish_commentary": true
+      "top_p": 0.95
     }
   }'
 ```
@@ -185,7 +184,7 @@ class PULSEEndpoint:
             "Content-Type": "application/json"
         }
     
-    def analyze_text(self, text, max_new_tokens=256, temperature=0.7, enable_turkish_commentary=True):
+    def analyze_text(self, text, max_new_tokens=256, temperature=0.7, enable_turkish_commentary=False):
         """
         Send text to PULSE-7B endpoint for analysis
         
@@ -223,7 +222,7 @@ class PULSEEndpoint:
         else:
             raise Exception(f"Request failed: {response.status_code} - {response.text}")
     
-    def analyze_image_url(self, image_url, query, max_new_tokens=512, temperature=0.2, enable_turkish_commentary=True):
+    def analyze_image_url(self, image_url, query, max_new_tokens=512, temperature=0.2, enable_turkish_commentary=False):
         """
         Analyze ECG image from URL with DeepSeek Turkish commentary
         
@@ -264,7 +263,7 @@ class PULSEEndpoint:
         else:
             raise Exception(f"Request failed: {response.status_code} - {response.text}")
     
-    def analyze_image_base64(self, image_path, query, max_new_tokens=512, temperature=0.2, enable_turkish_commentary=True):
+    def analyze_image_base64(self, image_path, query, max_new_tokens=512, temperature=0.2, enable_turkish_commentary=False):
         """
         Analyze ECG image from local file with DeepSeek Turkish commentary
         
@@ -319,26 +318,20 @@ if __name__ == "__main__":
         hf_token="YOUR_HF_TOKEN"
     )
     
-    # Example 1: Text analysis with Turkish commentary
+    # Example 1: Text analysis (default - no Turkish commentary)
     response = endpoint.analyze_text(
-        "What are the characteristics of a normal sinus rhythm?",
-        enable_turkish_commentary=True
+        "What are the characteristics of a normal sinus rhythm?"
     )
     print("English Response:", response["generated_text"])
-    if "comment_text" in response:
-        print("Turkish Commentary:", response["comment_text"])
     
-    # Example 2: Image URL analysis with Turkish commentary
+    # Example 2: Image URL analysis (default - no Turkish commentary)
     response = endpoint.analyze_image_url(
         image_url="https://i.imgur.com/7uuejqO.jpeg",
-        query="What are the main features and diagnosis in this ECG image?",
-        enable_turkish_commentary=True
+        query="What are the main features and diagnosis in this ECG image?"
     )
     print("English Analysis:", response["generated_text"])
-    if "comment_text" in response:
-        print("Turkish Commentary:", response["comment_text"])
     
-    # Example 3: Local image analysis with Turkish commentary
+    # Example 3: Local image analysis with Turkish commentary (explicitly enabled)
     response = endpoint.analyze_image_base64(
         image_path="./ecg_image.jpg",
         query="Analyze this ECG for any abnormalities",
@@ -348,13 +341,14 @@ if __name__ == "__main__":
     if "comment_text" in response:
         print("Turkish Commentary:", response["comment_text"])
     
-    # Example 4: Analysis without Turkish commentary
-    response = endpoint.analyze_image_url(
-        image_url="https://i.imgur.com/7uuejqO.jpeg",
-        query="Brief ECG analysis",
-        enable_turkish_commentary=False
+    # Example 4: Text analysis with Turkish commentary (explicitly enabled)
+    response = endpoint.analyze_text(
+        "What are the characteristics of atrial fibrillation?",
+        enable_turkish_commentary=True
     )
-    print("English Only Response:", response["generated_text"])
+    print("English Response:", response["generated_text"])
+    if "comment_text" in response:
+        print("Turkish Commentary:", response["comment_text"])
 ```
 
 ### JavaScript / Node.js
@@ -602,7 +596,7 @@ main();
 | `top_k` | int | 50 | Top-k sampling parameter |
 | `do_sample` | bool | true | Whether to use sampling or greedy decoding |
 | `repetition_penalty` | float | 1.05 | Penalty for repeating tokens (1.0-2.0) |
-| `enable_turkish_commentary` | bool | true | Enable/disable DeepSeek Turkish commentary |
+| `enable_turkish_commentary` | bool | false | Enable/disable DeepSeek Turkish commentary |
 | `deepseek_timeout` | int | 30 | DeepSeek API timeout in seconds (10-60) |
 | `stop` | array | ["</s>"] | Stop sequences for generation |
 | `return_full_text` | bool | false | Return full text including input |

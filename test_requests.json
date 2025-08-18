@@ -202,7 +202,7 @@
       "query", "text", "prompt"
     ],
     "deepseek_integration": {
-      "enable_turkish_commentary": "true/false (default: true)",
+      "enable_turkish_commentary": "true/false (default: false)",
       "deepseek_timeout": "10-60 seconds (default: 30)",
       "environment_variable": "deep_key (DeepSeek API key)",
       "commentary_status_values": [
