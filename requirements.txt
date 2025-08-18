@@ -20,7 +20,3 @@ psutil>=5.8.0
 
 # HuggingFace Inference specific
 huggingface-hub>=0.16.0
-
-# Email processing dependencies
-email-validator>=2.0.0
-chardet>=5.0.0

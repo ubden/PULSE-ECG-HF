@@ -23,8 +23,6 @@ This repository provides a custom handler for deploying the **PULSE-7B** ECG ana
 
 **🚀 Enhanced with DeepSeek Integration**: This handler automatically translates PULSE-7B's English medical analysis into patient-friendly Turkish commentary using DeepSeek AI, providing bilingual ECG interpretation for Turkish healthcare professionals and patients.
 
-**📧 Automatic Email Processing**: When email configuration is provided, the system automatically processes ECG images sent via email and responds with analysis results, making it a complete email-to-analysis solution.
-
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -36,9 +34,8 @@ This repository provides a custom handler for deploying the **PULSE-7B** ECG ana
 
 ```
 pulse-hf/
-├── handler.py              # Custom inference handler with auto email processing
+├── handler.py              # Custom inference handler with DeepSeek integration
 ├── utils.py                # Performance monitoring and DeepSeek client
-├── email_ecg_processor.py  # Email processing module (auto-loaded by handler)
 ├── requirements.txt        # Python dependencies
 ├── generation_config.json  # Model generation configuration
 ├── test_requests.json      # Example request templates
@@ -71,26 +68,17 @@ pulse-hf/
 4. Click **"Create Endpoint"**
 5. Wait for the status to change from `Building` → `Initializing` → `Running`
 
-### Step 3: Configure Environment Variables
+### Step 3: Configure DeepSeek API Key (Optional)
 
-#### 3.1 DeepSeek API Key (Optional - for Turkish commentary)
+To enable Turkish commentary feature:
+
 1. Go to your endpoint's **"Environment"** tab
 2. In **"Secret Env"** section, add:
    - **Key**: `deep_key`
    - **Value**: Your DeepSeek API key
-
-#### 3.2 Email Processing (Optional - for automatic email processing)
-Add these additional environment variables:
-   - **Key**: `mail_host` | **Value**: `imap.gmail.com` (or your email provider)
-   - **Key**: `mail_username` | **Value**: Your email address
-   - **Key**: `mail_pw` | **Value**: Your email app password
-   - **Key**: `hf_key` | **Value**: Your HuggingFace token
-
 3. Click **"Update Endpoint"**
 
-**Note**: 
-- Without DeepSeek key: Works but no Turkish commentary
-- Without email config: Works but no automatic email processing
+**Note**: Without this configuration, the endpoint will work but without Turkish commentary.
 
 ### Step 4: Get Your Endpoint URL
 
