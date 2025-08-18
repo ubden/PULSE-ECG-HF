@@ -268,8 +268,11 @@ class EndpointHandler:
                 if image_input:
                     image = self.process_image_input(image_input)
                     if image:
-                        # For now, we'll add a note about the image since we're text-only
-                        text = f"[Image provided - {image.size[0]}x{image.size[1]} pixels] {text}"
+                        # Create proper ECG analysis prompt with image context
+                        if text:
+                            text = f"You are an expert cardiologist analyzing ECG images. An ECG image has been provided ({image.size[0]}x{image.size[1]} pixels). Please analyze this ECG image and answer the following question: {text}"
+                        else:
+                            text = f"You are an expert cardiologist analyzing ECG images. An ECG image has been provided ({image.size[0]}x{image.size[1]} pixels). Please provide a detailed analysis of this ECG image, including rhythm, rate, intervals, and any abnormalities."
             else:
                 # Simple string input
                 text = str(inputs)
@@ -277,19 +280,22 @@ class EndpointHandler:
             if not text:
                 return [{"generated_text": "Hey, I need some text to work with! Please provide an input."}]
             
-            # Get generation parameters with sensible defaults
+            # Get generation parameters with sensible defaults optimized for medical analysis
             parameters = data.get("parameters", {})
-            max_new_tokens = min(parameters.get("max_new_tokens", 256), 1024)
-            temperature = parameters.get("temperature", 0.7)
-            top_p = parameters.get("top_p", 0.95)
+            max_new_tokens = min(parameters.get("max_new_tokens", 512), 2048)  # More tokens for detailed medical analysis
+            temperature = parameters.get("temperature", 0.2)  # Lower temperature for more focused medical content
+            top_p = parameters.get("top_p", 0.9)  # Slightly lower for more focused responses
             do_sample = parameters.get("do_sample", True)
-            repetition_penalty = parameters.get("repetition_penalty", 1.0)
+            repetition_penalty = parameters.get("repetition_penalty", 1.05)  # Slight penalty to avoid repetition
             
             # Check if Turkish commentary is requested (NEW FEATURE)
             enable_turkish_commentary = parameters.get("enable_turkish_commentary", False)  # Default false
             
             # Using pipeline? Let's go!
             if self.use_pipeline:
+                print(f"🎛️ Pipeline generation: temp={temperature}, tokens={max_new_tokens}")
+                print(f"📝 Input text: '{text[:100]}...'")
+                
                 result = self.pipe(
                     text,
                     max_new_tokens=max_new_tokens,
@@ -297,12 +303,23 @@ class EndpointHandler:
                     top_p=top_p,
                     do_sample=do_sample,
                     repetition_penalty=repetition_penalty,
-                    return_full_text=False  # Just the new stuff, not the input
+                    return_full_text=False,  # Just the new stuff, not the input
+                    pad_token_id=50256,  # Add explicit pad token
+                    eos_token_id=2  # Add explicit EOS token
                 )
                 
                 # Pipeline returns a list, let's handle it
                 if isinstance(result, list) and len(result) > 0:
-                    generated_text = result[0].get("generated_text", "")
+                    generated_text = result[0].get("generated_text", "").strip()
+                    
+                    # Clean up common issues
+                    if generated_text.startswith(text):
+                        generated_text = generated_text[len(text):].strip()
+                    
+                    # Remove common artifacts
+                    generated_text = generated_text.replace("</s>", "").strip()
+                    
+                    print(f"✅ Generated: '{generated_text[:100]}...'")
                     
                     # Create response
                     response = {"generated_text": generated_text}
@@ -313,7 +330,10 @@ class EndpointHandler:
                     
                     return [response]
                 else:
-                    response = {"generated_text": str(result)}
+                    generated_text = str(result).strip()
+                    
+                    # Create response
+                    response = {"generated_text": generated_text}
                     
                     # Add Turkish commentary if requested (NEW FEATURE)
                     if enable_turkish_commentary:
@@ -323,6 +343,9 @@ class EndpointHandler:
             
             # Manual generation mode
             else:
+                print(f"🔥 Manual generation: temp={temperature}, tokens={max_new_tokens}")
+                print(f"📝 Input text: '{text[:100]}...'")
+                
                 # Tokenize the input
                 encoded = self.tokenizer(
                     text,
@@ -356,7 +379,12 @@ class EndpointHandler:
                     generated_ids,
                     skip_special_tokens=True,
                     clean_up_tokenization_spaces=True
-                )
+                ).strip()
+                
+                # Clean up artifacts
+                generated_text = generated_text.replace("</s>", "").strip()
+                
+                print(f"✅ Generated: '{generated_text[:100]}...'")
                 
                 # Create response
                 response = {"generated_text": generated_text}
