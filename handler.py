@@ -49,11 +49,13 @@ class EndpointHandler:
             import transformers
             print(f"🔧 Transformers version: {transformers.__version__}")
             
-            # Check if it's a development version
-            if "dev" in transformers.__version__ or "git" in str(transformers.__version__):
-                print("✅ Using development version - llava_llama support expected")
+            # PULSE LLaVA works with transformers==4.37.2
+            if transformers.__version__ == "4.37.2":
+                print("✅ Using PULSE LLaVA compatible version (4.37.2)")
+            elif "dev" in transformers.__version__ or "git" in str(transformers.__version__):
+                print("⚠️ Using development version - may conflict with PULSE LLaVA")
             else:
-                print("⚠️ Using stable version - llava_llama support may not be available")
+                print("⚠️ Using different version - PULSE LLaVA prefers 4.37.2")
         except Exception as e:
             print(f"❌ Error checking transformers version: {e}")
         
@@ -101,7 +103,9 @@ class EndpointHandler:
                 
             except ImportError as import_error:
                 print(f"⚠️ PULSE LLaVA modules not available: {import_error}")
-                print("💡 Installing PULSE LLaVA dependencies...")
+                print("💡 PULSE LLaVA not installed correctly!")
+                print("📋 Required: pip install git+https://github.com/AIMedLab/PULSE.git#subdirectory=LLaVA")
+                print("🔄 Falling back to transformers approach...")
                 
                 # Fallback to transformers approach
                 from transformers import AutoModel, AutoProcessor

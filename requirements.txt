@@ -1,6 +1,9 @@
-# Core ML dependencies - PULSE-7B requires development transformers for llava_llama architecture
-# Note: Stable transformers doesn't support llava_llama yet, using development version
-git+https://github.com/huggingface/transformers.git
+# PULSE-7B specific dependencies (LLaVA implementation)
+# Install PULSE's LLaVA implementation for proper model loading
+git+https://github.com/AIMedLab/PULSE.git#subdirectory=LLaVA
+
+# Core ML dependencies - Use PULSE LLaVA's required transformers version
+# Note: PULSE LLaVA requires transformers==4.37.2, not development version
 torch>=2.1.0
 accelerate>=0.25.0
 sentencepiece
@@ -13,10 +16,6 @@ requests>=2.28.0
 
 # LLaVA/Vision model dependencies
 timm>=0.9.0
-
-# PULSE-7B specific dependencies (LLaVA implementation)
-# Install PULSE's LLaVA implementation for proper model loading
-git+https://github.com/AIMedLab/PULSE.git#subdirectory=LLaVA
 
 # Optional performance improvements
 flash-attn>=2.0.0; sys_platform != "darwin"

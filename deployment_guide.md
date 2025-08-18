@@ -14,13 +14,12 @@
 pip install -r requirements.txt
 ```
 
-2. **LLaVA Architecture Desteği (PULSE-7B için kritik):**
+2. **PULSE LLaVA Installation (PULSE-7B için kritik):**
 ```bash
-# Eğer "llava_llama architecture not recognized" hatası alırsanız:
-pip install --upgrade transformers
+# PULSE-7B için PULSE'un kendi LLaVA implementasyonu gerekli:
+pip install git+https://github.com/AIMedLab/PULSE.git#subdirectory=LLaVA
 
-# Veya en son development sürümü:
-pip install git+https://github.com/huggingface/transformers.git
+# Bu otomatik olarak transformers==4.37.2 yükleyecektir
 ```
 
 3. **Flash Attention (isteğe bağlı, performans için):**
