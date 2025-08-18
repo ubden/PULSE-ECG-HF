@@ -33,10 +33,10 @@ class EndpointHandler:
     def __init__(self, path=""):
         """
         Hey there! Let's get this PULSE-7B model up and running.
-        We'll load it from the HuggingFace hub directly, so no worries about local files.
+        We'll try to load from local files first, then fallback to HuggingFace hub.
         
         Args:
-            path: Model directory path (we actually ignore this and load from HF hub)
+            path: Model directory path (defaults to current directory)
         """
         print("🚀 Starting up PULSE-7B handler...")
         print("📝 Enhanced by Ubden® Team - github.com/ck-cankurt")
@@ -67,59 +67,135 @@ class EndpointHandler:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"🖥️ Running on: {self.device}")
         
-        # Simple approach: Just try pipeline first (most reliable)
+        # Set model path - use local files if available
+        self.model_path = path if path else "."
+        print(f"📁 Model path: {self.model_path}")
+        
+        # Check if we have local model files
+        import os
+        local_files = {
+            'config': os.path.exists(os.path.join(self.model_path, 'config.json')),
+            'tokenizer_config': os.path.exists(os.path.join(self.model_path, 'tokenizer_config.json')),
+            'tokenizer_model': os.path.exists(os.path.join(self.model_path, 'tokenizer.model')),
+            'model_index': os.path.exists(os.path.join(self.model_path, 'model.safetensors.index.json')),
+            'generation_config': os.path.exists(os.path.join(self.model_path, 'generation_config.json'))
+        }
+        
+        local_available = all(local_files.values())
+        print(f"📦 Local model files: {'✅ Available' if local_available else '❌ Missing'}")
+        for file_type, exists in local_files.items():
+            print(f"   - {file_type}: {'✅' if exists else '❌'}")
+        
+        # KESIN ÇÖZÜM: Local files varsa onları kullan, yoksa HuggingFace Hub
         try:
-            from transformers import pipeline
+            print("📦 KESIN ÇÖZÜM: Model'in kendi architecture dosyalarını yüklüyorum...")
             
-            print("📦 Loading PULSE-7B with pipeline (text-generation)...")
-            self.pipe = pipeline(
-                "text-generation",
-                model="PULSE-ECG/PULSE-7B",
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                device=0 if torch.cuda.is_available() else -1,
-                trust_remote_code=True,
-                model_kwargs={
-                    "low_cpu_mem_usage": True,
-                    "use_safetensors": True
-                }
-            )
-            self.use_pipeline = True
-            self.model = None
-            self.processor = None
-            self.tokenizer = None
-            print("✅ Model loaded successfully via pipeline!")
+            # Önce model'in custom dosyalarını indir ve import et
+            from transformers import AutoConfig, AutoTokenizer
+            from transformers.utils import cached_file
+            import importlib.util
+            import sys
+            import os
             
-        except Exception as e1:
-            print(f"⚠️ Pipeline failed: {e1}")
+            # Model config'i yükle (local varsa local, yoksa hub)
+            model_source = self.model_path if local_available else "PULSE-ECG/PULSE-7B"
+            config = AutoConfig.from_pretrained(model_source, trust_remote_code=True)
+            print(f"🔧 Model config yüklendi: {config.model_type} (source: {'local' if local_available else 'hub'})")
             
-            # Fallback: Manual loading
+            # Custom modeling dosyasını indir veya bul
             try:
-                from transformers import AutoTokenizer, AutoModelForCausalLM
+                if local_available:
+                    # Local modeling file'ı ara
+                    modeling_file = os.path.join(self.model_path, "modeling_llava.py")
+                    if not os.path.exists(modeling_file):
+                        # Local'de yoksa hub'dan indir
+                        modeling_file = cached_file("PULSE-ECG/PULSE-7B", "modeling_llava.py", _raise_exceptions_for_missing_entries=False)
+                else:
+                    # Hub'dan indir
+                    modeling_file = cached_file("PULSE-ECG/PULSE-7B", "modeling_llava.py", _raise_exceptions_for_missing_entries=False)
+                if modeling_file and os.path.exists(modeling_file):
+                    print(f"🔧 Custom modeling dosyası bulundu: {modeling_file}")
+                    
+                    # Dosyayı modül olarak yükle
+                    spec = importlib.util.spec_from_file_location("modeling_llava", modeling_file)
+                    modeling_module = importlib.util.module_from_spec(spec)
+                    sys.modules["modeling_llava"] = modeling_module
+                    spec.loader.exec_module(modeling_module)
+                    
+                    print("🔧 Custom modeling modülü yüklendi")
+                    
+                    # Model class'ını bul ve kullan
+                    if hasattr(modeling_module, 'LlavaLlamaForCausalLM'):
+                        print("🎯 LlavaLlamaForCausalLM bulundu, yükleniyor...")
+                        
+                        self.tokenizer = AutoTokenizer.from_pretrained(model_source, trust_remote_code=True)
+                        self.model = modeling_module.LlavaLlamaForCausalLM.from_pretrained(
+                            model_source,
+                            config=config,
+                            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                            device_map="auto",
+                            low_cpu_mem_usage=True,
+                            trust_remote_code=True
+                        )
+                        
+                        if self.tokenizer.pad_token is None:
+                            self.tokenizer.pad_token = self.tokenizer.eos_token
+                            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+                        
+                        self.model.eval()
+                        self.use_pipeline = False
+                        self.pipe = None
+                        self.processor = None
+                        print("✅ PULSE-7B başarıyla custom implementation ile yüklendi!")
+                        
+                    else:
+                        raise Exception("LlavaLlamaForCausalLM class'ı bulunamadı")
+                else:
+                    raise Exception("modeling_llava.py dosyası bulunamadı")
+                    
+            except Exception as modeling_error:
+                print(f"⚠️ Custom modeling yüklenemedi: {modeling_error}")
+                raise modeling_error
+            
+        except Exception as e_final:
+            print(f"😓 Custom approach da başarısız: {e_final}")
+            print("🔄 En basit çözüme geçiyorum...")
+            
+            # En basit çözüm: Sadece text generation pipeline
+            try:
+                from transformers import pipeline, AutoTokenizer
                 
-                print("📦 Fallback: Manual loading with AutoModelForCausalLM...")
-                self.tokenizer = AutoTokenizer.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    "PULSE-ECG/PULSE-7B",
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                    device_map="auto",
-                    low_cpu_mem_usage=True,
-                    trust_remote_code=True
-                )
+                print("📦 EN BASIT ÇÖZÜM: Sadece tokenizer + basit generation...")
+                
+                # Sadece tokenizer yükle (local varsa local)
+                tokenizer_source = self.model_path if local_available else "PULSE-ECG/PULSE-7B"
+                self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_source, trust_remote_code=True)
+                print(f"🔧 Tokenizer yüklendi (source: {'local' if local_available else 'hub'})")
                 
                 if self.tokenizer.pad_token is None:
                     self.tokenizer.pad_token = self.tokenizer.eos_token
                     self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
                 
-                self.model.eval()
-                self.use_pipeline = False
-                self.pipe = None
-                self.processor = None
-                print("✅ Model loaded manually!")
+                # Pipeline'ı text-generation için kur
+                pipeline_source = self.model_path if local_available else "PULSE-ECG/PULSE-7B"
+                self.pipe = pipeline(
+                    "text-generation",
+                    tokenizer=self.tokenizer,
+                    model=pipeline_source,
+                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                    device=0 if torch.cuda.is_available() else -1,
+                    trust_remote_code=True
+                )
+                print(f"🔧 Pipeline kuruldu (source: {'local' if local_available else 'hub'})")
                 
-            except Exception as e2:
-                print(f"😓 All approaches failed!")
-                print(f"Pipeline error: {e1}")
-                print(f"Manual error: {e2}")
+                self.use_pipeline = True
+                self.model = None
+                self.processor = None
+                print("✅ BASIT ÇÖZÜM BAŞARILI: Tokenizer + Pipeline yüklendi!")
+                
+            except Exception as e_simple:
+                print(f"💥 En basit çözüm de başarısız: {e_simple}")
+                print("❌ Model hiçbir şekilde yüklenemedi")
                 
                 self.model = None
                 self.processor = None
