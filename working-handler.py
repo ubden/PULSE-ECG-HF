@@ -10,23 +10,6 @@ import base64
 from io import BytesIO
 from PIL import Image
 import requests
-import time
-
-# Import utilities if available
-try:
-    from utils import (
-        performance_monitor, 
-        validate_image_input, 
-        sanitize_parameters, 
-        get_system_info,
-        create_health_check,
-        deepseek_client
-    )
-    UTILS_AVAILABLE = True
-except ImportError:
-    UTILS_AVAILABLE = False
-    deepseek_client = None
-    print("⚠️ Utils module not found - performance monitoring and DeepSeek integration disabled")
 
 
 class EndpointHandler:
@@ -40,28 +23,6 @@ class EndpointHandler:
         """
         print("🚀 Starting up PULSE-7B handler...")
         print("📝 Enhanced by Ubden® Team - github.com/ck-cankurt")
-        import sys
-        print(f"🔧 Python version: {sys.version}")
-        print(f"🔧 PyTorch version: {torch.__version__}")
-        
-        # Check transformers version
-        try:
-            import transformers
-            print(f"🔧 Transformers version: {transformers.__version__}")
-            
-            # PULSE LLaVA works with transformers==4.37.2
-            if transformers.__version__ == "4.37.2":
-                print("✅ Using PULSE LLaVA compatible version (4.37.2)")
-            elif "dev" in transformers.__version__ or "git" in str(transformers.__version__):
-                print("⚠️ Using development version - may conflict with PULSE LLaVA")
-            else:
-                print("⚠️ Using different version - PULSE LLaVA prefers 4.37.2")
-        except Exception as e:
-            print(f"❌ Error checking transformers version: {e}")
-        
-        print(f"🔧 CUDA available: {torch.cuda.is_available()}")
-        if torch.cuda.is_available():
-            print(f"🔧 CUDA device: {torch.cuda.get_device_name(0)}")
         
         # Let's see what hardware we're working with
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -128,19 +89,6 @@ class EndpointHandler:
                 self.use_pipeline = None
         else:
             self.use_pipeline = True
-        
-        # Final status report
-        print("\n🔍 Model Loading Status Report:")
-        print(f"   - use_pipeline: {self.use_pipeline}")
-        print(f"   - model: {'✅ Loaded' if self.model is not None else '❌ None'}")
-        print(f"   - processor: {'✅ Loaded' if self.processor is not None else '❌ None'}")
-        print(f"   - tokenizer: {'✅ Loaded' if self.tokenizer is not None else '❌ None'}")
-        print(f"   - pipe: {'✅ Loaded' if self.pipe is not None else '❌ None'}")
-        
-        if all(x is None for x in [self.model, self.processor, self.tokenizer, self.pipe]):
-            print("💥 CRITICAL: No model components loaded successfully!")
-        else:
-            print("✅ At least one model component loaded successfully")
 
     def process_image_input(self, image_input):
         """
@@ -180,56 +128,6 @@ class EndpointHandler:
         
         return None
 
-    def add_turkish_commentary(self, response: Dict[str, Any], enable_commentary: bool, timeout: int = 30) -> Dict[str, Any]:
-        """Add Turkish commentary to the response using DeepSeek API"""
-        if not enable_commentary:
-            return response
-            
-        if not UTILS_AVAILABLE or not deepseek_client:
-            print("⚠️ DeepSeek client not available - skipping Turkish commentary")
-            response["commentary_status"] = "unavailable"
-            return response
-            
-        if not deepseek_client.is_available():
-            print("⚠️ DeepSeek API key not configured - skipping Turkish commentary")
-            response["commentary_status"] = "api_key_missing"
-            return response
-            
-        generated_text = response.get("generated_text", "")
-        if not generated_text:
-            print("⚠️ No generated text to comment on")
-            response["commentary_status"] = "no_text"
-            return response
-            
-        print("🔄 DeepSeek ile Türkçe yorum ekleniyor...")
-        commentary_result = deepseek_client.get_turkish_commentary(generated_text, timeout)
-        
-        if commentary_result["success"]:
-            response["comment_text"] = commentary_result["comment_text"]
-            response["commentary_model"] = commentary_result.get("model", "deepseek-chat")
-            response["commentary_tokens"] = commentary_result.get("tokens_used", 0)
-            response["commentary_status"] = "success"
-            print("✅ Türkçe yorum başarıyla eklendi")
-        else:
-            response["comment_text"] = ""
-            response["commentary_error"] = commentary_result["error"]
-            response["commentary_status"] = "failed"
-            print(f"❌ Türkçe yorum eklenemedi: {commentary_result['error']}")
-            
-        return response
-
-    def health_check(self) -> Dict[str, Any]:
-        """Health check endpoint"""
-        if UTILS_AVAILABLE:
-            return create_health_check()
-        else:
-            return {
-                'status': 'healthy',
-                'model': 'PULSE-7B',
-                'timestamp': time.time(),
-                'handler_version': '2.0.0'
-            }
-
     def __call__(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Main processing function - where the magic happens!
@@ -256,8 +154,7 @@ class EndpointHandler:
             
             if isinstance(inputs, dict):
                 # Dictionary input - check for text and image
-                # Support query field (new) plus original text/prompt fields
-                text = inputs.get("query", inputs.get("text", inputs.get("prompt", str(inputs))))
+                text = inputs.get("text", inputs.get("prompt", str(inputs)))
                 
                 # Check for image in various formats
                 image_input = inputs.get("image", inputs.get("image_url", inputs.get("image_base64", None)))
@@ -281,9 +178,6 @@ class EndpointHandler:
             do_sample = parameters.get("do_sample", True)
             repetition_penalty = parameters.get("repetition_penalty", 1.0)
             
-            # Check if Turkish commentary is requested (NEW FEATURE)
-            enable_turkish_commentary = parameters.get("enable_turkish_commentary", False)  # Default false
-            
             # Using pipeline? Let's go!
             if self.use_pipeline:
                 result = self.pipe(
@@ -298,24 +192,9 @@ class EndpointHandler:
                 
                 # Pipeline returns a list, let's handle it
                 if isinstance(result, list) and len(result) > 0:
-                    generated_text = result[0].get("generated_text", "")
-                    
-                    # Create response
-                    response = {"generated_text": generated_text}
-                    
-                    # Add Turkish commentary if requested (NEW FEATURE)
-                    if enable_turkish_commentary:
-                        response = self.add_turkish_commentary(response, True)
-                    
-                    return [response]
+                    return [{"generated_text": result[0].get("generated_text", "")}]
                 else:
-                    response = {"generated_text": str(result)}
-                    
-                    # Add Turkish commentary if requested (NEW FEATURE)
-                    if enable_turkish_commentary:
-                        response = self.add_turkish_commentary(response, True)
-                    
-                    return [response]
+                    return [{"generated_text": str(result)}]
             
             # Manual generation mode
             else:
@@ -354,15 +233,7 @@ class EndpointHandler:
                     clean_up_tokenization_spaces=True
                 )
                 
-                # Create response
-                response = {"generated_text": generated_text}
-                
-                # Add Turkish commentary if requested (NEW FEATURE)
-                if enable_turkish_commentary:
-                    response = self.add_turkish_commentary(response, True)
-                
-                return [response]
-            
+                return [{"generated_text": generated_text}]
             
         except Exception as e:
             error_msg = f"Something went wrong during generation: {str(e)}"
