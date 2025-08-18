@@ -40,18 +40,31 @@ class EndpointHandler:
         """
         print("🚀 Starting up PULSE-7B handler...")
         print("📝 Enhanced by Ubden® Team - github.com/ck-cankurt")
+        import sys
+        print(f"🔧 Python version: {sys.version}")
+        print(f"🔧 PyTorch version: {torch.__version__}")
+        print(f"🔧 CUDA available: {torch.cuda.is_available()}")
+        if torch.cuda.is_available():
+            print(f"🔧 CUDA device: {torch.cuda.get_device_name(0)}")
         
         # Let's see what hardware we're working with
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"🖥️ Running on: {self.device}")
         
+        # Try multiple approaches to load the model
+        self.model = None
+        self.processor = None
+        self.tokenizer = None
+        self.pipe = None
+        self.use_pipeline = None
+        
+        # Approach 1: Try LLaVA with AutoModel (most flexible)
         try:
-            # For LLaVA models, we need to load them properly with vision capabilities
-            from transformers import AutoProcessor, LlavaForConditionalGeneration
+            from transformers import AutoModel, AutoProcessor
             
-            print("📦 Loading LLaVA model with vision capabilities...")
+            print("📦 Attempting to load with AutoModel + AutoProcessor...")
             self.processor = AutoProcessor.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
-            self.model = LlavaForConditionalGeneration.from_pretrained(
+            self.model = AutoModel.from_pretrained(
                 "PULSE-ECG/PULSE-7B",
                 torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
                 device_map="auto",
@@ -60,39 +73,102 @@ class EndpointHandler:
             )
             self.model.eval()
             self.use_pipeline = False
-            print("✅ LLaVA model loaded successfully with vision support!")
+            print("✅ Model loaded successfully with AutoModel + AutoProcessor!")
             
-        except Exception as e:
-            print(f"⚠️ LLaVA loading failed: {e}")
-            print("🔄 Falling back to pipeline approach...")
+        except Exception as e1:
+            print(f"⚠️ AutoModel approach failed: {e1}")
             
+            # Approach 2: Try specific LLaVA model
             try:
-                # Fallback - using pipeline but aware it won't handle images properly
-                from transformers import pipeline
+                from transformers import AutoProcessor, LlavaForConditionalGeneration
                 
-                print("📦 Fetching model from HuggingFace Hub...")
-                self.pipe = pipeline(
-                    "text-generation",
-                    model="PULSE-ECG/PULSE-7B",
+                print("📦 Attempting LlavaForConditionalGeneration...")
+                self.processor = AutoProcessor.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
+                self.model = LlavaForConditionalGeneration.from_pretrained(
+                    "PULSE-ECG/PULSE-7B",
                     torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                    device=0 if torch.cuda.is_available() else -1,
-                    trust_remote_code=True,
-                    model_kwargs={
-                        "low_cpu_mem_usage": True,
-                        "use_safetensors": True
-                    }
+                    device_map="auto",
+                    low_cpu_mem_usage=True,
+                    trust_remote_code=True
                 )
-                self.use_pipeline = True
-                self.processor = None
-                print("✅ Model loaded via pipeline (text-only mode)!")
+                self.model.eval()
+                self.use_pipeline = False
+                print("✅ LLaVA model loaded successfully!")
                 
             except Exception as e2:
-                print(f"😓 Pipeline also failed: {e2}")
-                # If all else fails, we'll handle it gracefully
-                self.pipe = None
-                self.model = None
-                self.processor = None
-                self.use_pipeline = None
+                print(f"⚠️ LLaVA approach failed: {e2}")
+                
+                # Approach 3: Try pipeline approach
+                try:
+                    from transformers import pipeline
+                    
+                    print("📦 Falling back to pipeline approach...")
+                    self.pipe = pipeline(
+                        "text-generation",
+                        model="PULSE-ECG/PULSE-7B",
+                        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                        device=0 if torch.cuda.is_available() else -1,
+                        trust_remote_code=True,
+                        model_kwargs={
+                            "low_cpu_mem_usage": True,
+                            "use_safetensors": True
+                        }
+                    )
+                    self.use_pipeline = True
+                    print("✅ Model loaded via pipeline!")
+                    
+                except Exception as e3:
+                    print(f"⚠️ Pipeline approach failed: {e3}")
+                    
+                    # Approach 4: Manual loading with tokenizer + model
+                    try:
+                        from transformers import AutoTokenizer, AutoModelForCausalLM
+                        
+                        print("📦 Attempting manual loading with AutoModelForCausalLM...")
+                        self.tokenizer = AutoTokenizer.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
+                        self.model = AutoModelForCausalLM.from_pretrained(
+                            "PULSE-ECG/PULSE-7B",
+                            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                            device_map="auto",
+                            low_cpu_mem_usage=True,
+                            trust_remote_code=True
+                        )
+                        
+                        # Fix padding token if missing
+                        if self.tokenizer.pad_token is None:
+                            self.tokenizer.pad_token = self.tokenizer.eos_token
+                            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+                        
+                        self.model.eval()
+                        self.use_pipeline = False
+                        print("✅ Model loaded manually with tokenizer!")
+                        
+                    except Exception as e4:
+                        print(f"😓 All loading approaches failed!")
+                        print(f"Error 1 (AutoModel): {e1}")
+                        print(f"Error 2 (LLaVA): {e2}")
+                        print(f"Error 3 (Pipeline): {e3}")
+                        print(f"Error 4 (Manual): {e4}")
+                        
+                        # Complete failure - set everything to None
+                        self.model = None
+                        self.processor = None
+                        self.tokenizer = None
+                        self.pipe = None
+                        self.use_pipeline = None
+        
+        # Final status report
+        print("\n🔍 Model Loading Status Report:")
+        print(f"   - use_pipeline: {self.use_pipeline}")
+        print(f"   - model: {'✅ Loaded' if self.model is not None else '❌ None'}")
+        print(f"   - processor: {'✅ Loaded' if self.processor is not None else '❌ None'}")
+        print(f"   - tokenizer: {'✅ Loaded' if self.tokenizer is not None else '❌ None'}")
+        print(f"   - pipe: {'✅ Loaded' if self.pipe is not None else '❌ None'}")
+        
+        if all(x is None for x in [self.model, self.processor, self.tokenizer, self.pipe]):
+            print("💥 CRITICAL: No model components loaded successfully!")
+        else:
+            print("✅ At least one model component loaded successfully")
 
     def process_image_input(self, image_input):
         """
@@ -236,10 +312,10 @@ class EndpointHandler:
             List with the generated response
         """
         # Quick check - is our model ready?
-        if self.use_pipeline is None:
+        if (self.use_pipeline is None and self.model is None and self.pipe is None):
             return [{
                 "generated_text": "Oops! Model couldn't load properly. Please check the deployment settings.",
-                "error": "Model initialization failed",
+                "error": "Model initialization failed - all loading approaches failed",
                 "handler": "Ubden® Team Enhanced Handler"
             }]
         
@@ -318,7 +394,7 @@ class EndpointHandler:
             print(f"🎛️ Generation params: max_tokens={max_new_tokens}, temp={temperature}, top_p={top_p}, rep_penalty={repetition_penalty}")
             
             # Using pipeline? Let's go!
-            if self.use_pipeline:
+            if self.use_pipeline and self.pipe is not None:
                 generation_kwargs = {
                     "max_new_tokens": max_new_tokens,
                     "temperature": temperature,
@@ -381,7 +457,7 @@ class EndpointHandler:
                     return [result_dict]
             
             # Manual generation mode (LLaVA with vision support)
-            else:
+            elif self.model is not None:
                 if hasattr(self, 'processor') and self.processor is not None:
                     # LLaVA model with vision support
                     print("🔥 Using LLaVA model with vision capabilities")
@@ -426,16 +502,18 @@ class EndpointHandler:
                     print(f"✅ LLaVA generated response: {len(generated_text)} characters")
                     
                 else:
-                    # Fallback to text-only processing (shouldn't happen with proper LLaVA loading)
-                    print("⚠️ No processor available, falling back to text-only mode")
+                    # Fallback to text-only processing
+                    print("⚠️ No processor available, falling back to tokenizer-based text processing")
                     
-                    # This is the old tokenizer-based approach (without image support)
+                    # Check if we have tokenizer available
                     if not hasattr(self, 'tokenizer') or self.tokenizer is None:
+                        print("❌ No tokenizer available either")
                         return [{
                             "generated_text": "",
                             "error": "No tokenizer available for text processing",
                             "model": "PULSE-7B",
-                            "processing_method": "manual"
+                            "processing_method": "manual",
+                            "success": False
                         }]
                     
                     encoded = self.tokenizer(
@@ -488,6 +566,17 @@ class EndpointHandler:
                     )
                 
                 return [result]
+            
+            # If we reach here, no model is available
+            else:
+                print("❌ No model available for generation")
+                return [{
+                    "generated_text": "",
+                    "error": "No model available for generation - all loading methods failed",
+                    "model": "PULSE-7B",
+                    "processing_method": "none",
+                    "success": False
+                }]
             
         except Exception as e:
             error_msg = f"Generation error: {str(e)}"
