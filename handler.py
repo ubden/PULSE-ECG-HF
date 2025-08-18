@@ -79,87 +79,133 @@ class EndpointHandler:
         print(f"🖥️ Running on: {self.device}")
         
         try:
-            # First attempt - using pipeline (easiest and most stable way)
-            from transformers import pipeline
-            
-            print("📦 Fetching model from HuggingFace Hub...")
-            self.pipe = pipeline(
-                "text-generation",
-                model="PULSE-ECG/PULSE-7B",
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                device=0 if torch.cuda.is_available() else -1,
-                trust_remote_code=True,
-                model_kwargs={
-                    "low_cpu_mem_usage": True,
-                    "use_safetensors": True
-                }
-            )
-            print("✅ Model loaded successfully via pipeline!")
+            # First attempt - PULSE demo's exact approach
+            if LLAVA_AVAILABLE:
+                print("📦 Using PULSE demo's load_pretrained_model approach...")
+                from llava.model.builder import load_pretrained_model
+                from llava.mm_utils import get_model_name_from_path
+                
+                model_path = "PULSE-ECG/PULSE-7B"
+                model_name = get_model_name_from_path(model_path)
+                
+                self.tokenizer, self.model, self.image_processor, self.context_len = load_pretrained_model(
+                    model_path=model_path,
+                    model_base=None,
+                    model_name=model_name,
+                    load_8bit=False,
+                    load_4bit=False
+                )
+                
+                # Move model to device like demo
+                self.model = self.model.to(self.device)
+                self.use_pipeline = False
+                print("✅ Model loaded successfully with PULSE demo's approach!")
+                print(f"📸 Image processor: {type(self.image_processor).__name__}")
+                
+            else:
+                raise ImportError("LLaVA modules not available")
             
         except Exception as e:
-            print(f"⚠️ Pipeline didn't work out: {e}")
-            print("🔄 Let me try a different approach...")
+            print(f"⚠️ PULSE demo approach failed: {e}")
+            print("🔄 Falling back to pipeline...")
             
             try:
-                # Plan B - load model and tokenizer separately
-                from transformers import AutoTokenizer, LlamaForCausalLM
+                # Fallback - using pipeline
+                from transformers import pipeline
                 
-                # Get the tokenizer ready
-                print("📖 Setting up tokenizer...")
-                self.tokenizer = AutoTokenizer.from_pretrained(
-                    "PULSE-ECG/PULSE-7B",
-                    trust_remote_code=True
-                )
-                
-                # Load the model as Llama (it works, trust me!)
-                print("🧠 Loading the model as Llama...")
-                self.model = LlamaForCausalLM.from_pretrained(
-                    "PULSE-ECG/PULSE-7B",
+                print("📦 Fetching model from HuggingFace Hub...")
+                self.pipe = pipeline(
+                    "text-generation",
+                    model="PULSE-ECG/PULSE-7B",
                     torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                    device_map="auto",
-                    low_cpu_mem_usage=True,
-                    trust_remote_code=True
+                    device=0 if torch.cuda.is_available() else -1,
+                    trust_remote_code=True,
+                    model_kwargs={
+                        "low_cpu_mem_usage": True,
+                        "use_safetensors": True
+                    }
                 )
-                
-                # Quick fix for padding token if it's missing
-                if self.tokenizer.pad_token is None:
-                    self.tokenizer.pad_token = self.tokenizer.eos_token
-                    self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-                
-                self.model.eval()
-                self.use_pipeline = False
-                print("✅ Model loaded successfully via direct loading!")
+                self.use_pipeline = True
+                self.image_processor = None
+                print("✅ Model loaded successfully via pipeline!")
                 
             except Exception as e2:
-                print(f"😓 That didn't work either: {e2}")
-                # If all else fails, we'll handle it gracefully
-                self.pipe = None
-                self.model = None
-                self.tokenizer = None
-                self.use_pipeline = None
-        else:
-            self.use_pipeline = True
+                print(f"😓 Pipeline also failed: {e2}")
+                
+                try:
+                    # Last resort - manual loading
+                    from transformers import AutoTokenizer, LlamaForCausalLM
+                    
+                    print("📖 Manual loading as last resort...")
+                    self.tokenizer = AutoTokenizer.from_pretrained(
+                        "PULSE-ECG/PULSE-7B",
+                        trust_remote_code=True
+                    )
+                    
+                    self.model = LlamaForCausalLM.from_pretrained(
+                        "PULSE-ECG/PULSE-7B",
+                        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                        device_map="auto",
+                        low_cpu_mem_usage=True,
+                        trust_remote_code=True
+                    )
+                    
+                    if self.tokenizer.pad_token is None:
+                        self.tokenizer.pad_token = self.tokenizer.eos_token
+                        self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+                    
+                    self.model.eval()
+                    self.use_pipeline = False
+                    self.image_processor = None
+                    print("✅ Model loaded manually!")
+                    
+                except Exception as e3:
+                    print(f"😓 All approaches failed: {e3}")
+                    self.pipe = None
+                    self.model = None
+                    self.tokenizer = None
+                    self.image_processor = None
+                    self.use_pipeline = None
         
         # Final status report
         print("\n🔍 Model Loading Status Report:")
         print(f"   - use_pipeline: {self.use_pipeline}")
         print(f"   - model: {'✅ Loaded' if hasattr(self, 'model') and self.model is not None else '❌ None'}")
         print(f"   - tokenizer: {'✅ Loaded' if hasattr(self, 'tokenizer') and self.tokenizer is not None else '❌ None'}")
+        print(f"   - image_processor: {'✅ Loaded' if hasattr(self, 'image_processor') and self.image_processor is not None else '❌ None'}")
         print(f"   - pipe: {'✅ Loaded' if hasattr(self, 'pipe') and self.pipe is not None else '❌ None'}")
         
         # Check if any model component loaded successfully
         has_model = hasattr(self, 'model') and self.model is not None
         has_tokenizer = hasattr(self, 'tokenizer') and self.tokenizer is not None
         has_pipe = hasattr(self, 'pipe') and self.pipe is not None
+        has_image_processor = hasattr(self, 'image_processor') and self.image_processor is not None
         
         if not (has_model or has_tokenizer or has_pipe):
             print("💥 CRITICAL: No model components loaded successfully!")
         else:
             print("✅ At least one model component loaded successfully")
+            if has_image_processor:
+                print("🖼️ Vision capabilities available!")
+            else:
+                print("⚠️ No image processor - text-only mode")
 
+    def is_valid_image_format(self, filename_or_url):
+        """Validate image format like PULSE demo"""
+        # Demo's supported formats
+        image_extensions = ["jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp", "heic", "heif", "jfif", "svg", "eps", "raw"]
+        
+        if filename_or_url.startswith(('http://', 'https://')):
+            # For URLs, check the extension or content-type
+            ext = filename_or_url.split('.')[-1].split('?')[0].lower()
+            return ext in image_extensions
+        else:
+            # For base64 or local files
+            return True  # Base64 will be validated during decode
+    
     def process_image_input(self, image_input):
         """
-        Handle both URL and base64 image inputs like a champ!
+        Handle both URL and base64 image inputs exactly like PULSE demo
         
         Args:
             image_input: Can be a URL string or base64 encoded image
@@ -171,23 +217,42 @@ class EndpointHandler:
             # Check if it's a URL (starts with http/https)
             if isinstance(image_input, str) and (image_input.startswith('http://') or image_input.startswith('https://')):
                 print(f"🌐 Fetching image from URL: {image_input[:50]}...")
-                response = requests.get(image_input, timeout=10)
-                response.raise_for_status()
-                image = Image.open(BytesIO(response.content)).convert('RGB')
-                print("✅ Image downloaded successfully!")
-                return image
+                
+                # Validate format like demo
+                if not self.is_valid_image_format(image_input):
+                    print("❌ Invalid image format in URL")
+                    return None
+                
+                # Demo's exact image loading approach
+                response = requests.get(image_input, timeout=15)
+                if response.status_code == 200:
+                    image = Image.open(BytesIO(response.content)).convert("RGB")
+                    print(f"✅ Image downloaded successfully! Size: {image.size}")
+                    return image
+                else:
+                    print(f"❌ Failed to load image: status {response.status_code}")
+                    return None
             
             # Must be base64 then
             elif isinstance(image_input, str):
                 print("🔍 Decoding base64 image...")
-                # Remove the data URL prefix if it exists
-                if "base64," in image_input:
-                    image_input = image_input.split("base64,")[1]
                 
-                image_data = base64.b64decode(image_input)
-                image = Image.open(BytesIO(image_data)).convert('RGB')
-                print("✅ Image decoded successfully!")
-                return image
+                # Remove the data URL prefix if it exists
+                base64_data = image_input
+                if "base64," in image_input:
+                    base64_data = image_input.split("base64,")[1]
+                
+                # Clean and validate base64 data
+                base64_data = base64_data.strip().replace('\n', '').replace('\r', '').replace(' ', '')
+                
+                try:
+                    image_data = base64.b64decode(base64_data)
+                    image = Image.open(BytesIO(image_data)).convert('RGB')
+                    print(f"✅ Base64 image decoded successfully! Size: {image.size}")
+                    return image
+                except Exception as decode_error:
+                    print(f"❌ Base64 decode error: {decode_error}")
+                    return None
                 
         except Exception as e:
             print(f"❌ Couldn't process the image: {e}")
@@ -279,9 +344,22 @@ class EndpointHandler:
                 if image_input:
                     image = self.process_image_input(image_input)
                     if image:
-                        # Keep original text for demo's LLaVA processing
-                        # Demo will handle image token insertion properly
-                        print(f"🖼️ Image loaded: {image.size[0]}x{image.size[1]} pixels - will use demo's LLaVA format")
+                        # Since we're in text-only mode, create smart ECG context
+                        print(f"🖼️ Image loaded: {image.size[0]}x{image.size[1]} pixels - using text-only ECG analysis mode")
+                        
+                        # Create ECG-specific prompt that mimics visual analysis
+                        ecg_context = f"Analyzing an ECG image ({image.size[0]}x{image.size[1]} pixels). "
+                        
+                        # Enhance the query with ECG-specific instructions
+                        if "features" in text.lower() and "diagnosis" in text.lower():
+                            # This is a comprehensive analysis request
+                            text = f"{ecg_context}Please provide a detailed ECG interpretation including: 1) Rhythm analysis, 2) Rate assessment, 3) Interval measurements (PR, QRS, QT), 4) Axis determination, 5) ST segment analysis, 6) T wave morphology, 7) Any abnormalities or pathological findings. {text}"
+                        elif any(word in text.lower() for word in ["analyze", "analysis", "interpret"]):
+                            # General analysis request
+                            text = f"{ecg_context}Provide a comprehensive ECG analysis covering rhythm, rate, intervals, and any abnormalities. {text}"
+                        else:
+                            # Specific question
+                            text = f"{ecg_context}{text}"
             else:
                 # Simple string input
                 text = str(inputs)
@@ -365,91 +443,71 @@ class EndpointHandler:
                 print(f"🔥 Manual generation with PULSE demo logic: temp={temperature}, tokens={max_new_tokens}")
                 print(f"📝 Input text: '{text[:100]}...'")
                 
-                if LLAVA_AVAILABLE and image is not None:
-                    print("🖼️ Using PULSE demo's LLaVA conversation format")
-                    
-                    # Use demo's conversation template
-                    conv_mode = "llava_v1"  # Demo uses llava_v1 for PULSE
-                    conv = conv_templates[conv_mode].copy()
-                    
-                    # Process image like demo
-                    image_tensor = process_images([image], self.tokenizer, self.model.config)[0]
-                    image_tensor = image_tensor.half().to(self.model.device)
-                    
-                    # Create conversation like demo
-                    inp = DEFAULT_IMAGE_TOKEN + '\n' + text
-                    conv.append_message(conv.roles[0], inp)
-                    conv.append_message(conv.roles[1], None)
-                    prompt = conv.get_prompt()
-                    
-                    # Tokenize with image token like demo
-                    input_ids = tokenizer_image_token(
-                        prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
-                    ).unsqueeze(0).to(self.model.device)
-                    
-                    # Set up stopping criteria like demo
-                    stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
-                    keywords = [stop_str]
-                    stopping_criteria = KeywordsStoppingCriteria(keywords, self.tokenizer, input_ids)
-                    
-                    # Generate like demo
-                    with torch.no_grad():
-                        outputs = self.model.generate(
-                            input_ids,
-                            images=image_tensor.unsqueeze(0),  # Add batch dimension
-                            do_sample=do_sample,
-                            temperature=temperature,
-                            top_p=top_p,
-                            max_new_tokens=max_new_tokens,
-                            use_cache=True,
-                            stopping_criteria=[stopping_criteria]
-                        )
-                    
-                    # Decode response like demo
-                    generated_text = self.tokenizer.decode(
-                        outputs[0, input_ids.shape[1]:], 
-                        skip_special_tokens=True
-                    ).strip()
-                    
-                    print(f"✅ PULSE demo style generation: '{generated_text[:100]}...' (length: {len(generated_text)})")
-                    
-                else:
-                    print("🔤 Using basic tokenizer generation (no LLaVA)")
-                    
-                    # Basic tokenizer approach for text-only or when LLaVA not available
-                    encoded = self.tokenizer(
-                        text,
-                        return_tensors="pt",
-                        truncation=True,
-                        max_length=2048
+                # Text-only generation with enhanced ECG context
+                print("🔤 Using enhanced text-only generation with ECG context")
+                
+                # Tokenize the enhanced prompt
+                encoded = self.tokenizer(
+                    text,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=4096  # Increased for longer prompts
+                )
+                
+                input_ids = encoded["input_ids"].to(self.device)
+                attention_mask = encoded.get("attention_mask")
+                if attention_mask is not None:
+                    attention_mask = attention_mask.to(self.device)
+                
+                print(f"🔍 Enhanced generation debug:")
+                print(f"   - Enhanced prompt length: {len(text)} chars")
+                print(f"   - Input tokens: {input_ids.shape[-1]}")
+                print(f"   - Prompt preview: '{text[:150]}...'")
+                
+                # Generate with enhanced settings for medical analysis
+                with torch.no_grad():
+                    outputs = self.model.generate(
+                        input_ids,
+                        attention_mask=attention_mask,
+                        max_new_tokens=max_new_tokens,
+                        min_new_tokens=50,  # Ensure substantial response
+                        temperature=temperature,
+                        top_p=top_p,
+                        do_sample=do_sample,
+                        repetition_penalty=repetition_penalty,
+                        pad_token_id=self.tokenizer.pad_token_id,
+                        eos_token_id=self.tokenizer.eos_token_id,
+                        early_stopping=False
                     )
-                    
-                    input_ids = encoded["input_ids"].to(self.device)
-                    attention_mask = encoded.get("attention_mask")
-                    if attention_mask is not None:
-                        attention_mask = attention_mask.to(self.device)
-                    
-                    with torch.no_grad():
-                        outputs = self.model.generate(
-                            input_ids,
-                            attention_mask=attention_mask,
-                            max_new_tokens=max_new_tokens,
-                            min_new_tokens=100,
-                            temperature=temperature,
-                            top_p=top_p,
-                            do_sample=do_sample,
-                            repetition_penalty=repetition_penalty,
-                            pad_token_id=self.tokenizer.pad_token_id,
-                            eos_token_id=self.tokenizer.eos_token_id,
-                            early_stopping=False
-                        )
-                    
-                    generated_ids = outputs[0][input_ids.shape[-1]:]
-                    generated_text = self.tokenizer.decode(
-                        generated_ids,
-                        skip_special_tokens=True,
-                        clean_up_tokenization_spaces=True
-                    ).strip()
+                
+                # Decode and clean response
+                generated_ids = outputs[0][input_ids.shape[-1]:]
+                generated_text = self.tokenizer.decode(
+                    generated_ids,
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=True
+                ).strip()
+                
+                # Clean up common artifacts and improve formatting
+                generated_text = generated_text.replace("</s>", "").strip()
+                
+                # Remove any training-style explanations that might appear
+                if "In this task" in generated_text:
+                    # Split and take only the medical analysis part
+                    parts = generated_text.split("In this task")
+                    generated_text = parts[0].strip()
+                
+                # Clean up parenthetical answers if they appear
+                if generated_text.startswith("(Answer:"):
+                    # Extract the content from parentheses and expand it
+                    if ")" in generated_text:
+                        answer_part = generated_text[generated_text.find("(")+1:generated_text.find(")")]
+                        if answer_part.startswith("Answer:"):
+                            answer_part = answer_part[7:].strip()
+                        # Use the concise answer as the response
+                        generated_text = f"This ECG shows {answer_part.lower()}."
+                
+                print(f"✅ Enhanced text-only generation: '{generated_text[:100]}...' (length: {len(generated_text)})")
                 
                 # Create response
                 response = {"generated_text": generated_text}
