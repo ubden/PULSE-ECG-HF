@@ -144,18 +144,58 @@ class EndpointHandler:
                         print("✅ Model loaded manually with tokenizer!")
                         
                     except Exception as e4:
-                        print(f"😓 All loading approaches failed!")
-                        print(f"Error 1 (AutoModel): {e1}")
-                        print(f"Error 2 (LLaVA): {e2}")
-                        print(f"Error 3 (Pipeline): {e3}")
-                        print(f"Error 4 (Manual): {e4}")
+                        print(f"⚠️ Manual approach also failed: {e4}")
                         
-                        # Complete failure - set everything to None
-                        self.model = None
-                        self.processor = None
-                        self.tokenizer = None
-                        self.pipe = None
-                        self.use_pipeline = None
+                        # Final attempt: Try with custom architecture loading
+                        try:
+                            print("📦 Final attempt: Loading with custom architecture support...")
+                            
+                            # This approach loads the model with full trust_remote_code
+                            # and lets the model define its own architecture
+                            from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+                            
+                            # Load config first to understand the model
+                            config = AutoConfig.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
+                            print(f"🔧 Model config loaded: {config.model_type}")
+                            
+                            # Try to load with the config
+                            self.tokenizer = AutoTokenizer.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
+                            self.model = AutoModelForCausalLM.from_pretrained(
+                                "PULSE-ECG/PULSE-7B",
+                                config=config,
+                                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                                device_map="auto",
+                                low_cpu_mem_usage=True,
+                                trust_remote_code=True
+                            )
+                            
+                            # Fix padding token if missing
+                            if self.tokenizer.pad_token is None:
+                                self.tokenizer.pad_token = self.tokenizer.eos_token
+                                self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+                            
+                            self.model.eval()
+                            self.use_pipeline = False
+                            print("✅ Model loaded with custom architecture support!")
+                            
+                        except Exception as e5:
+                            print(f"😓 All loading approaches failed!")
+                            print(f"Error 1 (AutoModel): {e1}")
+                            print(f"Error 2 (LLaVA): {e2}")
+                            print(f"Error 3 (Pipeline): {e3}")
+                            print(f"Error 4 (Manual): {e4}")
+                            print(f"Error 5 (Custom): {e5}")
+                            
+                            print("\n💡 SOLUTION: Update transformers to latest version:")
+                            print("   pip install --upgrade transformers")
+                            print("   OR: pip install git+https://github.com/huggingface/transformers.git")
+                            
+                            # Complete failure - set everything to None
+                            self.model = None
+                            self.processor = None
+                            self.tokenizer = None
+                            self.pipe = None
+                            self.use_pipeline = None
         
         # Final status report
         print("\n🔍 Model Loading Status Report:")

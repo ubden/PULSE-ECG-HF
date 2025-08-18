@@ -1,4 +1,5 @@
-transformers>=4.40.0
+# Core ML dependencies - PULSE-7B requires latest transformers for llava_llama architecture
+transformers>=4.44.0
 torch>=2.1.0
 accelerate>=0.25.0
 sentencepiece
@@ -8,6 +9,9 @@ protobuf
 # Image processing dependencies
 Pillow>=9.0.0
 requests>=2.28.0
+
+# LLaVA/Vision model dependencies
+timm>=0.9.0
 
 # Optional performance improvements
 flash-attn>=2.0.0; sys_platform != "darwin"
@@ -20,3 +24,7 @@ psutil>=5.8.0
 
 # HuggingFace Inference specific
 huggingface-hub>=0.16.0
+
+# Alternative: Install from source if stable version doesn't work
+# Uncomment the line below if you get llava_llama architecture errors:
+# git+https://github.com/huggingface/transformers.git

@@ -14,7 +14,16 @@
 pip install -r requirements.txt
 ```
 
-2. **Flash Attention (isteğe bağlı, performans için):**
+2. **LLaVA Architecture Desteği (PULSE-7B için kritik):**
+```bash
+# Eğer "llava_llama architecture not recognized" hatası alırsanız:
+pip install --upgrade transformers
+
+# Veya en son development sürümü:
+pip install git+https://github.com/huggingface/transformers.git
+```
+
+3. **Flash Attention (isteğe bağlı, performans için):**
 ```bash
 pip install flash-attn --no-build-isolation
 ```
@@ -103,19 +112,32 @@ print(f"GPU Memory: {torch.cuda.memory_allocated()/1024**3:.2f}GB")
 
 #### Common Issues:
 
-1. **CUDA Out of Memory**
+1. **"llava_llama architecture not recognized" Error**
+   ```bash
+   # Solution 1: Update transformers
+   pip install --upgrade transformers>=4.44.0
+   
+   # Solution 2: Install from source
+   pip install git+https://github.com/huggingface/transformers.git
+   
+   # Solution 3: Add to requirements.txt
+   git+https://github.com/huggingface/transformers.git
+   ```
+
+2. **CUDA Out of Memory**
    - Batch size'ı azaltın
    - `max_new_tokens` değerini düşürün
    - Gradient checkpointing kullanın
 
-2. **Slow Image Processing**
+3. **Slow Image Processing**
    - Image timeout değerini artırın
    - Image resize threshold ayarlayın
 
-3. **Model Loading Issues**
+4. **Model Loading Issues**
    - HuggingFace token'ını kontrol edin
    - Network bağlantısını doğrulayın
    - Cache dizinini temizleyin
+   - Transformers sürümünü kontrol edin
 
 ### Security Best Practices
 
