@@ -484,41 +484,23 @@ class EndpointHandler:
                 # Aggressive cleanup of artifacts
                 generated_text = generated_text.replace("</s>", "").strip()
                 
-                # Clean up parenthetical Answer format
+                # Simple cleanup - just remove Answer prefix and parentheses
                 if generated_text.startswith("(Answer:") and ")" in generated_text:
-                    # Extract and expand the concise answer
+                    # Just remove the parentheses and Answer: prefix
                     end_paren = generated_text.find(")")
                     answer_content = generated_text[8:end_paren].strip()  # Remove "(Answer:"
+                    # Keep the rest of the response if there is any
+                    rest_of_response = generated_text[end_paren+1:].strip()
                     
-                    # Expand the concise answer into full medical interpretation
-                    if "sinus rhythm" in answer_content.lower():
-                        parts = [part.strip() for part in answer_content.split(",")]
-                        expanded_parts = []
-                        
-                        for part in parts:
-                            if "sinus rhythm" in part.lower():
-                                expanded_parts.append("The electrocardiogram (ECG) reveals a sinus rhythm, indicating a normal heart rate and rhythm.")
-                            elif "inferior infarct" in part.lower():
-                                expanded_parts.append("The ECG shows signs of an inferior infarct, indicating myocardial damage in the inferior region.")
-                            elif "anterior" in part.lower() and "infarct" in part.lower():
-                                expanded_parts.append("There are signs of a possible acute anterior infarct.")
-                            elif "fascicular block" in part.lower() or "block" in part.lower():
-                                expanded_parts.append("The ECG suggests possible left anterior fascicular block, which may indicate a conduction abnormality in the heart's electrical system.")
-                            elif "hypertrophy" in part.lower():
-                                expanded_parts.append(f"There are signs of possible {part.lower()}.")
-                        
-                        if expanded_parts:
-                            generated_text = " ".join(expanded_parts)
-                        else:
-                            generated_text = f"The ECG shows {answer_content.lower()}."
+                    if rest_of_response:
+                        generated_text = f"{answer_content}. {rest_of_response}"
                     else:
-                        generated_text = f"The ECG shows {answer_content.lower()}."
+                        generated_text = answer_content
                 
-                # Clean up other artifacts
                 elif generated_text.startswith("Answer:"):
                     generated_text = generated_text[7:].strip()
                 
-                # Remove training artifacts
+                # Remove only clear training artifacts
                 cleanup_patterns = [
                     "In this task",
                     "I'm asking the respondent",
