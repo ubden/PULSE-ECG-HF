@@ -36,15 +36,18 @@
       }
     },
 
-    "minimal_url_request": {
-      "description": "Minimal parametrelerle image URL isteği",
+    "demo_optimized_request": {
+      "description": "PULSE-7B demo'sunun optimal ayarlarıyla image URL isteği",
       "request": {
         "inputs": {
-          "query": "Analyze this ECG image.",
+          "query": "What are the main features and diagnosis in this ECG image?",
           "image": "https://i.imgur.com/7uuejqO.jpeg"
         },
         "parameters": {
-          "temperature": 0.2
+          "temperature": 0.05,
+          "max_new_tokens": 4096,
+          "top_p": 1.0,
+          "do_sample": true
         }
       }
     },

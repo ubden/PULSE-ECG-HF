@@ -28,6 +28,17 @@ except ImportError:
     deepseek_client = None
     print("⚠️ Utils module not found - performance monitoring and DeepSeek integration disabled")
 
+# Try to import LLaVA modules for proper conversation handling
+try:
+    from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
+    from llava.conversation import conv_templates, SeparatorStyle
+    from llava.mm_utils import tokenizer_image_token, process_images, KeywordsStoppingCriteria
+    LLAVA_AVAILABLE = True
+    print("✅ LLaVA modules imported successfully")
+except ImportError:
+    LLAVA_AVAILABLE = False
+    print("⚠️ LLaVA modules not available - using basic text processing")
+
 
 class EndpointHandler:
     def __init__(self, path=""):
@@ -268,11 +279,9 @@ class EndpointHandler:
                 if image_input:
                     image = self.process_image_input(image_input)
                     if image:
-                        # Create concise ECG analysis prompt
-                        if text:
-                            text = f"ECG Analysis: {text}"
-                        else:
-                            text = "ECG Analysis: Analyze this ECG image for rhythm, rate, intervals, and abnormalities."
+                        # Keep original text for demo's LLaVA processing
+                        # Demo will handle image token insertion properly
+                        print(f"🖼️ Image loaded: {image.size[0]}x{image.size[1]} pixels - will use demo's LLaVA format")
             else:
                 # Simple string input
                 text = str(inputs)
@@ -280,13 +289,13 @@ class EndpointHandler:
             if not text:
                 return [{"generated_text": "Hey, I need some text to work with! Please provide an input."}]
             
-            # Get generation parameters - force generation with aggressive settings
+            # Get generation parameters - using PULSE-7B demo's optimal settings
             parameters = data.get("parameters", {})
-            max_new_tokens = min(parameters.get("max_new_tokens", 256), 1024)  # Back to working version default
-            temperature = parameters.get("temperature", 0.7)  # Back to working version default
-            top_p = parameters.get("top_p", 0.95)  # Back to working version default
-            do_sample = parameters.get("do_sample", True)
-            repetition_penalty = parameters.get("repetition_penalty", 1.0)  # Back to working version default
+            max_new_tokens = min(parameters.get("max_new_tokens", 4096), 8192)  # Demo uses 4096 default, 8192 max
+            temperature = parameters.get("temperature", 0.05)  # Demo uses 0.05 for precise medical analysis
+            top_p = parameters.get("top_p", 1.0)  # Demo uses 1.0 for full vocabulary access
+            do_sample = parameters.get("do_sample", True)  # Demo uses sampling
+            repetition_penalty = parameters.get("repetition_penalty", 1.0)  # Demo default
             
             print(f"🎛️ Generation params: max_tokens={max_new_tokens}, temp={temperature}, top_p={top_p}, do_sample={do_sample}, rep_penalty={repetition_penalty}")
             
@@ -301,6 +310,7 @@ class EndpointHandler:
                 result = self.pipe(
                     text,
                     max_new_tokens=max_new_tokens,
+                    min_new_tokens=100,  # Force detailed analysis like demo
                     temperature=temperature,
                     top_p=top_p,
                     do_sample=do_sample,
@@ -350,67 +360,96 @@ class EndpointHandler:
                     
                     return [response]
             
-            # Manual generation mode
+            # Manual generation mode - using PULSE demo's exact approach
             else:
-                print(f"🔥 Manual generation: temp={temperature}, tokens={max_new_tokens}")
+                print(f"🔥 Manual generation with PULSE demo logic: temp={temperature}, tokens={max_new_tokens}")
                 print(f"📝 Input text: '{text[:100]}...'")
                 
-                # Tokenize the input
-                encoded = self.tokenizer(
-                    text,
-                    return_tensors="pt",
-                    truncation=True,
-                    max_length=2048
-                )
-                
-                input_ids = encoded["input_ids"].to(self.device)
-                attention_mask = encoded.get("attention_mask")
-                if attention_mask is not None:
-                    attention_mask = attention_mask.to(self.device)
-                
-                # Generate the response
-                with torch.no_grad():
-                    outputs = self.model.generate(
-                        input_ids,
-                        attention_mask=attention_mask,
-                        max_new_tokens=max_new_tokens,
-                        temperature=temperature,
-                        top_p=top_p,
-                        do_sample=do_sample,
-                        repetition_penalty=repetition_penalty,
-                        pad_token_id=self.tokenizer.pad_token_id,
-                        eos_token_id=self.tokenizer.eos_token_id
-                    )
-                
-                # Debug generation results
-                print(f"🔍 Debug info:")
-                print(f"   - Input length: {input_ids.shape[-1]} tokens")
-                print(f"   - Output length: {outputs[0].shape[-1]} tokens")
-                print(f"   - Generated tokens: {outputs[0].shape[-1] - input_ids.shape[-1]}")
-                
-                # Decode only the new tokens (not the input)
-                generated_ids = outputs[0][input_ids.shape[-1]:]
-                print(f"   - Generated IDs shape: {generated_ids.shape}")
-                print(f"   - Generated IDs sample: {generated_ids[:10].tolist() if len(generated_ids) > 0 else 'EMPTY'}")
-                
-                if len(generated_ids) == 0:
-                    print("❌ No new tokens generated!")
-                    generated_text = "No response generated. Please try with different parameters."
+                if LLAVA_AVAILABLE and image is not None:
+                    print("🖼️ Using PULSE demo's LLaVA conversation format")
+                    
+                    # Use demo's conversation template
+                    conv_mode = "llava_v1"  # Demo uses llava_v1 for PULSE
+                    conv = conv_templates[conv_mode].copy()
+                    
+                    # Process image like demo
+                    image_tensor = process_images([image], self.tokenizer, self.model.config)[0]
+                    image_tensor = image_tensor.half().to(self.model.device)
+                    
+                    # Create conversation like demo
+                    inp = DEFAULT_IMAGE_TOKEN + '\n' + text
+                    conv.append_message(conv.roles[0], inp)
+                    conv.append_message(conv.roles[1], None)
+                    prompt = conv.get_prompt()
+                    
+                    # Tokenize with image token like demo
+                    input_ids = tokenizer_image_token(
+                        prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
+                    ).unsqueeze(0).to(self.model.device)
+                    
+                    # Set up stopping criteria like demo
+                    stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
+                    keywords = [stop_str]
+                    stopping_criteria = KeywordsStoppingCriteria(keywords, self.tokenizer, input_ids)
+                    
+                    # Generate like demo
+                    with torch.no_grad():
+                        outputs = self.model.generate(
+                            input_ids,
+                            images=image_tensor.unsqueeze(0),  # Add batch dimension
+                            do_sample=do_sample,
+                            temperature=temperature,
+                            top_p=top_p,
+                            max_new_tokens=max_new_tokens,
+                            use_cache=True,
+                            stopping_criteria=[stopping_criteria]
+                        )
+                    
+                    # Decode response like demo
+                    generated_text = self.tokenizer.decode(
+                        outputs[0, input_ids.shape[1]:], 
+                        skip_special_tokens=True
+                    ).strip()
+                    
+                    print(f"✅ PULSE demo style generation: '{generated_text[:100]}...' (length: {len(generated_text)})")
+                    
                 else:
+                    print("🔤 Using basic tokenizer generation (no LLaVA)")
+                    
+                    # Basic tokenizer approach for text-only or when LLaVA not available
+                    encoded = self.tokenizer(
+                        text,
+                        return_tensors="pt",
+                        truncation=True,
+                        max_length=2048
+                    )
+                    
+                    input_ids = encoded["input_ids"].to(self.device)
+                    attention_mask = encoded.get("attention_mask")
+                    if attention_mask is not None:
+                        attention_mask = attention_mask.to(self.device)
+                    
+                    with torch.no_grad():
+                        outputs = self.model.generate(
+                            input_ids,
+                            attention_mask=attention_mask,
+                            max_new_tokens=max_new_tokens,
+                            min_new_tokens=100,
+                            temperature=temperature,
+                            top_p=top_p,
+                            do_sample=do_sample,
+                            repetition_penalty=repetition_penalty,
+                            pad_token_id=self.tokenizer.pad_token_id,
+                            eos_token_id=self.tokenizer.eos_token_id,
+                            early_stopping=False
+                        )
+                    
+                    generated_ids = outputs[0][input_ids.shape[-1]:]
                     generated_text = self.tokenizer.decode(
                         generated_ids,
                         skip_special_tokens=True,
                         clean_up_tokenization_spaces=True
                     ).strip()
-                    
-                    # Clean up artifacts
-                    generated_text = generated_text.replace("</s>", "").strip()
-                    
-                    if not generated_text:
-                        print("❌ Decoded text is empty!")
-                        generated_text = "Empty response generated. Model may need different prompt format."
-                
-                print(f"✅ Final generated text: '{generated_text[:100]}...' (length: {len(generated_text)})")
                 
                 # Create response
                 response = {"generated_text": generated_text}
