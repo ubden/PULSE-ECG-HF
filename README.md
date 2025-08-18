@@ -23,6 +23,8 @@ This repository provides a custom handler for deploying the **PULSE-7B** ECG ana
 
 **🚀 Enhanced with DeepSeek Integration**: This handler automatically translates PULSE-7B's English medical analysis into patient-friendly Turkish commentary using DeepSeek AI, providing bilingual ECG interpretation for Turkish healthcare professionals and patients.
 
+**⚠️ Important**: PULSE-7B uses `llava_llama` architecture which requires development version of transformers. This is automatically handled in requirements.txt.
+
 ## 🚀 Quick Start
 
 ### Prerequisites

@@ -1,5 +1,6 @@
-# Core ML dependencies - PULSE-7B requires latest transformers for llava_llama architecture
-transformers>=4.44.0
+# Core ML dependencies - PULSE-7B requires development transformers for llava_llama architecture
+# Note: Stable transformers doesn't support llava_llama yet, using development version
+git+https://github.com/huggingface/transformers.git
 torch>=2.1.0
 accelerate>=0.25.0
 sentencepiece

@@ -43,6 +43,20 @@ class EndpointHandler:
         import sys
         print(f"🔧 Python version: {sys.version}")
         print(f"🔧 PyTorch version: {torch.__version__}")
+        
+        # Check transformers version
+        try:
+            import transformers
+            print(f"🔧 Transformers version: {transformers.__version__}")
+            
+            # Check if it's a development version
+            if "dev" in transformers.__version__ or "git" in str(transformers.__version__):
+                print("✅ Using development version - llava_llama support expected")
+            else:
+                print("⚠️ Using stable version - llava_llama support may not be available")
+        except Exception as e:
+            print(f"❌ Error checking transformers version: {e}")
+        
         print(f"🔧 CUDA available: {torch.cuda.is_available()}")
         if torch.cuda.is_available():
             print(f"🔧 CUDA device: {torch.cuda.get_device_name(0)}")
@@ -179,23 +193,75 @@ class EndpointHandler:
                             print("✅ Model loaded with custom architecture support!")
                             
                         except Exception as e5:
-                            print(f"😓 All loading approaches failed!")
-                            print(f"Error 1 (AutoModel): {e1}")
-                            print(f"Error 2 (LLaVA): {e2}")
-                            print(f"Error 3 (Pipeline): {e3}")
-                            print(f"Error 4 (Manual): {e4}")
-                            print(f"Error 5 (Custom): {e5}")
+                            print(f"⚠️ Custom approach also failed: {e5}")
                             
-                            print("\n💡 SOLUTION: Update transformers to latest version:")
-                            print("   pip install --upgrade transformers")
-                            print("   OR: pip install git+https://github.com/huggingface/transformers.git")
-                            
-                            # Complete failure - set everything to None
-                            self.model = None
-                            self.processor = None
-                            self.tokenizer = None
-                            self.pipe = None
-                            self.use_pipeline = None
+                            # Ultra-final attempt: Try to use the model's own files
+                            try:
+                                print("📦 Ultra-final attempt: Using model's custom implementation...")
+                                
+                                # Force download and use model's own implementation
+                                from transformers.utils import cached_file
+                                import importlib.util
+                                import os
+                                
+                                # Try to get the modeling file from the model repo
+                                modeling_file = cached_file("PULSE-ECG/PULSE-7B", "modeling_llava.py", _raise_exceptions_for_missing_entries=False)
+                                
+                                if modeling_file and os.path.exists(modeling_file):
+                                    print(f"🔧 Found custom modeling file: {modeling_file}")
+                                    
+                                    # Load the module
+                                    spec = importlib.util.spec_from_file_location("modeling_llava", modeling_file)
+                                    modeling_module = importlib.util.module_from_spec(spec)
+                                    spec.loader.exec_module(modeling_module)
+                                    
+                                    # Try to find the main model class
+                                    if hasattr(modeling_module, 'LlavaLlamaForCausalLM'):
+                                        print("🔧 Using LlavaLlamaForCausalLM from custom implementation")
+                                        
+                                        from transformers import AutoTokenizer
+                                        self.tokenizer = AutoTokenizer.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
+                                        self.model = modeling_module.LlavaLlamaForCausalLM.from_pretrained(
+                                            "PULSE-ECG/PULSE-7B",
+                                            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                                            device_map="auto",
+                                            low_cpu_mem_usage=True,
+                                            trust_remote_code=True
+                                        )
+                                        
+                                        # Fix padding token if missing
+                                        if self.tokenizer.pad_token is None:
+                                            self.tokenizer.pad_token = self.tokenizer.eos_token
+                                            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+                                        
+                                        self.model.eval()
+                                        self.use_pipeline = False
+                                        print("✅ Model loaded with custom implementation!")
+                                    else:
+                                        raise Exception("LlavaLlamaForCausalLM not found in custom modeling file")
+                                else:
+                                    raise Exception("Custom modeling file not found")
+                                    
+                            except Exception as e6:
+                                print(f"😓 All loading approaches failed!")
+                                print(f"Error 1 (AutoModel): {e1}")
+                                print(f"Error 2 (LLaVA): {e2}")
+                                print(f"Error 3 (Pipeline): {e3}")
+                                print(f"Error 4 (Manual): {e4}")
+                                print(f"Error 5 (Custom): {e5}")
+                                print(f"Error 6 (Ultra-Custom): {e6}")
+                                
+                                print("\n💡 SOLUTION: This model requires development transformers:")
+                                print("   Requirements.txt should contain:")
+                                print("   git+https://github.com/huggingface/transformers.git")
+                                print("\n🔄 Current status: Using fallback text-only mode")
+                                
+                                # Complete failure - set everything to None
+                                self.model = None
+                                self.processor = None
+                                self.tokenizer = None
+                                self.pipe = None
+                                self.use_pipeline = None
         
         # Final status report
         print("\n🔍 Model Loading Status Report:")
