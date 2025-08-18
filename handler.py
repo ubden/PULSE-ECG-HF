@@ -132,12 +132,16 @@ class EndpointHandler:
         # Final status report
         print("\n🔍 Model Loading Status Report:")
         print(f"   - use_pipeline: {self.use_pipeline}")
-        print(f"   - model: {'✅ Loaded' if self.model is not None else '❌ None'}")
-        print(f"   - processor: {'✅ Loaded' if self.processor is not None else '❌ None'}")
-        print(f"   - tokenizer: {'✅ Loaded' if self.tokenizer is not None else '❌ None'}")
-        print(f"   - pipe: {'✅ Loaded' if self.pipe is not None else '❌ None'}")
+        print(f"   - model: {'✅ Loaded' if hasattr(self, 'model') and self.model is not None else '❌ None'}")
+        print(f"   - tokenizer: {'✅ Loaded' if hasattr(self, 'tokenizer') and self.tokenizer is not None else '❌ None'}")
+        print(f"   - pipe: {'✅ Loaded' if hasattr(self, 'pipe') and self.pipe is not None else '❌ None'}")
         
-        if all(x is None for x in [self.model, self.processor, self.tokenizer, self.pipe]):
+        # Check if any model component loaded successfully
+        has_model = hasattr(self, 'model') and self.model is not None
+        has_tokenizer = hasattr(self, 'tokenizer') and self.tokenizer is not None
+        has_pipe = hasattr(self, 'pipe') and self.pipe is not None
+        
+        if not (has_model or has_tokenizer or has_pipe):
             print("💥 CRITICAL: No model components loaded successfully!")
         else:
             print("✅ At least one model component loaded successfully")
