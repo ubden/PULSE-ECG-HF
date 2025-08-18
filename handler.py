@@ -268,11 +268,11 @@ class EndpointHandler:
                 if image_input:
                     image = self.process_image_input(image_input)
                     if image:
-                        # Create proper ECG analysis prompt with image context
+                        # Create concise ECG analysis prompt
                         if text:
-                            text = f"You are an expert cardiologist analyzing ECG images. An ECG image has been provided ({image.size[0]}x{image.size[1]} pixels). Please analyze this ECG image and answer the following question: {text}"
+                            text = f"ECG Analysis: {text}"
                         else:
-                            text = f"You are an expert cardiologist analyzing ECG images. An ECG image has been provided ({image.size[0]}x{image.size[1]} pixels). Please provide a detailed analysis of this ECG image, including rhythm, rate, intervals, and any abnormalities."
+                            text = "ECG Analysis: Analyze this ECG image for rhythm, rate, intervals, and abnormalities."
             else:
                 # Simple string input
                 text = str(inputs)
@@ -280,13 +280,15 @@ class EndpointHandler:
             if not text:
                 return [{"generated_text": "Hey, I need some text to work with! Please provide an input."}]
             
-            # Get generation parameters with sensible defaults optimized for medical analysis
+            # Get generation parameters - force generation with aggressive settings
             parameters = data.get("parameters", {})
-            max_new_tokens = min(parameters.get("max_new_tokens", 512), 2048)  # More tokens for detailed medical analysis
-            temperature = parameters.get("temperature", 0.2)  # Lower temperature for more focused medical content
-            top_p = parameters.get("top_p", 0.9)  # Slightly lower for more focused responses
+            max_new_tokens = min(parameters.get("max_new_tokens", 256), 1024)  # Back to working version default
+            temperature = parameters.get("temperature", 0.7)  # Back to working version default
+            top_p = parameters.get("top_p", 0.95)  # Back to working version default
             do_sample = parameters.get("do_sample", True)
-            repetition_penalty = parameters.get("repetition_penalty", 1.05)  # Slight penalty to avoid repetition
+            repetition_penalty = parameters.get("repetition_penalty", 1.0)  # Back to working version default
+            
+            print(f"🎛️ Generation params: max_tokens={max_new_tokens}, temp={temperature}, top_p={top_p}, do_sample={do_sample}, rep_penalty={repetition_penalty}")
             
             # Check if Turkish commentary is requested (NEW FEATURE)
             enable_turkish_commentary = parameters.get("enable_turkish_commentary", False)  # Default false
@@ -303,23 +305,30 @@ class EndpointHandler:
                     top_p=top_p,
                     do_sample=do_sample,
                     repetition_penalty=repetition_penalty,
-                    return_full_text=False,  # Just the new stuff, not the input
-                    pad_token_id=50256,  # Add explicit pad token
-                    eos_token_id=2  # Add explicit EOS token
+                    return_full_text=False  # Just the new stuff, not the input
                 )
                 
                 # Pipeline returns a list, let's handle it
                 if isinstance(result, list) and len(result) > 0:
                     generated_text = result[0].get("generated_text", "").strip()
                     
+                    print(f"🔍 Pipeline debug:")
+                    print(f"   - Raw result: '{str(result[0])[:200]}...'")
+                    print(f"   - Generated text length: {len(generated_text)}")
+                    
                     # Clean up common issues
                     if generated_text.startswith(text):
                         generated_text = generated_text[len(text):].strip()
+                        print("🔧 Removed input text from output")
                     
                     # Remove common artifacts
                     generated_text = generated_text.replace("</s>", "").strip()
                     
-                    print(f"✅ Generated: '{generated_text[:100]}...'")
+                    if not generated_text:
+                        print("❌ Pipeline generated empty text!")
+                        generated_text = "Empty response from pipeline. Please try different parameters."
+                    
+                    print(f"✅ Final pipeline text: '{generated_text[:100]}...' (length: {len(generated_text)})")
                     
                     # Create response
                     response = {"generated_text": generated_text}
@@ -373,18 +382,35 @@ class EndpointHandler:
                         eos_token_id=self.tokenizer.eos_token_id
                     )
                 
+                # Debug generation results
+                print(f"🔍 Debug info:")
+                print(f"   - Input length: {input_ids.shape[-1]} tokens")
+                print(f"   - Output length: {outputs[0].shape[-1]} tokens")
+                print(f"   - Generated tokens: {outputs[0].shape[-1] - input_ids.shape[-1]}")
+                
                 # Decode only the new tokens (not the input)
                 generated_ids = outputs[0][input_ids.shape[-1]:]
-                generated_text = self.tokenizer.decode(
-                    generated_ids,
-                    skip_special_tokens=True,
-                    clean_up_tokenization_spaces=True
-                ).strip()
+                print(f"   - Generated IDs shape: {generated_ids.shape}")
+                print(f"   - Generated IDs sample: {generated_ids[:10].tolist() if len(generated_ids) > 0 else 'EMPTY'}")
                 
-                # Clean up artifacts
-                generated_text = generated_text.replace("</s>", "").strip()
+                if len(generated_ids) == 0:
+                    print("❌ No new tokens generated!")
+                    generated_text = "No response generated. Please try with different parameters."
+                else:
+                    generated_text = self.tokenizer.decode(
+                        generated_ids,
+                        skip_special_tokens=True,
+                        clean_up_tokenization_spaces=True
+                    ).strip()
+                    
+                    # Clean up artifacts
+                    generated_text = generated_text.replace("</s>", "").strip()
+                    
+                    if not generated_text:
+                        print("❌ Decoded text is empty!")
+                        generated_text = "Empty response generated. Model may need different prompt format."
                 
-                print(f"✅ Generated: '{generated_text[:100]}...'")
+                print(f"✅ Final generated text: '{generated_text[:100]}...' (length: {len(generated_text)})")
                 
                 # Create response
                 response = {"generated_text": generated_text}
