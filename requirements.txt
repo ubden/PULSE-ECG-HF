@@ -1,34 +1,10 @@
-# PULSE-7B specific dependencies (LLaVA implementation)
-# Install PULSE's LLaVA implementation for proper model loading
-git+https://github.com/AIMedLab/PULSE.git#subdirectory=LLaVA
-
-# Core ML dependencies - Use PULSE LLaVA's required transformers version
-# Note: PULSE LLaVA requires transformers==4.37.2, not development version
+transformers>=4.40.0
 torch>=2.1.0
 accelerate>=0.25.0
 sentencepiece
 safetensors
 protobuf
-
-# Image processing dependencies
 Pillow>=9.0.0
 requests>=2.28.0
-
-# LLaVA/Vision model dependencies
-timm>=0.9.0
-
-# Optional performance improvements
-flash-attn>=2.0.0; sys_platform != "darwin"
-bitsandbytes>=0.41.0; sys_platform != "darwin"
-
-# Utility libraries
 numpy>=1.21.0
-typing-extensions>=4.0.0
 psutil>=5.8.0
-
-# HuggingFace Inference specific
-huggingface-hub>=0.16.0
-
-# Alternative: Install from source if stable version doesn't work
-# Uncomment the line below if you get llava_llama architecture errors:
-# git+https://github.com/huggingface/transformers.git

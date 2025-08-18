@@ -67,235 +67,65 @@ class EndpointHandler:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"🖥️ Running on: {self.device}")
         
-        # Try multiple approaches to load the model
-        self.model = None
-        self.processor = None
-        self.tokenizer = None
-        self.pipe = None
-        self.use_pipeline = None
-        
-        # Approach 1: Try PULSE's own LLaVA implementation (recommended)
+        # Simple approach: Just try pipeline first (most reliable)
         try:
-            print("📦 Attempting to load with PULSE's LLaVA implementation...")
+            from transformers import pipeline
             
-            # Try to use PULSE's own LLaVA loader
-            try:
-                from llava.model.builder import load_pretrained_model
-                from llava.mm_utils import get_model_name_from_path
-                
-                print("🔧 Using PULSE's LLaVA loader...")
-                model_path = "PULSE-ECG/PULSE-7B"
-                model_name = get_model_name_from_path(model_path)
-                
-                self.tokenizer, self.model, self.image_processor, self.context_len = load_pretrained_model(
-                    model_path=model_path,
-                    model_base=None,
-                    model_name=model_name,
-                    load_8bit=False,
-                    load_4bit=False,
-                    device_map="auto",
-                    device=self.device
-                )
-                
-                self.processor = self.image_processor  # Use LLaVA's image processor
-                self.use_pipeline = False
-                print("✅ Model loaded successfully with PULSE's LLaVA implementation!")
-                
-            except ImportError as import_error:
-                print(f"⚠️ PULSE LLaVA modules not available: {import_error}")
-                print("💡 PULSE LLaVA not installed correctly!")
-                print("📋 Required: pip install git+https://github.com/AIMedLab/PULSE.git#subdirectory=LLaVA")
-                print("🔄 Falling back to transformers approach...")
-                
-                # Fallback to transformers approach
-                from transformers import AutoModel, AutoProcessor
-                
-                print("📦 Falling back to AutoModel + AutoProcessor...")
-                self.processor = AutoProcessor.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
-                self.model = AutoModel.from_pretrained(
-                    "PULSE-ECG/PULSE-7B",
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                    device_map="auto",
-                    low_cpu_mem_usage=True,
-                    trust_remote_code=True
-                )
-                self.model.eval()
-                self.use_pipeline = False
-                print("✅ Model loaded successfully with AutoModel + AutoProcessor!")
+            print("📦 Loading PULSE-7B with pipeline (text-generation)...")
+            self.pipe = pipeline(
+                "text-generation",
+                model="PULSE-ECG/PULSE-7B",
+                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                device=0 if torch.cuda.is_available() else -1,
+                trust_remote_code=True,
+                model_kwargs={
+                    "low_cpu_mem_usage": True,
+                    "use_safetensors": True
+                }
+            )
+            self.use_pipeline = True
+            self.model = None
+            self.processor = None
+            self.tokenizer = None
+            print("✅ Model loaded successfully via pipeline!")
             
         except Exception as e1:
-            print(f"⚠️ AutoModel approach failed: {e1}")
+            print(f"⚠️ Pipeline failed: {e1}")
             
-            # Approach 2: Try specific LLaVA model
+            # Fallback: Manual loading
             try:
-                from transformers import AutoProcessor, LlavaForConditionalGeneration
+                from transformers import AutoTokenizer, AutoModelForCausalLM
                 
-                print("📦 Attempting LlavaForConditionalGeneration...")
-                self.processor = AutoProcessor.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
-                self.model = LlavaForConditionalGeneration.from_pretrained(
+                print("📦 Fallback: Manual loading with AutoModelForCausalLM...")
+                self.tokenizer = AutoTokenizer.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
+                self.model = AutoModelForCausalLM.from_pretrained(
                     "PULSE-ECG/PULSE-7B",
                     torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
                     device_map="auto",
                     low_cpu_mem_usage=True,
                     trust_remote_code=True
                 )
+                
+                if self.tokenizer.pad_token is None:
+                    self.tokenizer.pad_token = self.tokenizer.eos_token
+                    self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+                
                 self.model.eval()
                 self.use_pipeline = False
-                print("✅ LLaVA model loaded successfully!")
+                self.pipe = None
+                self.processor = None
+                print("✅ Model loaded manually!")
                 
             except Exception as e2:
-                print(f"⚠️ LLaVA approach failed: {e2}")
+                print(f"😓 All approaches failed!")
+                print(f"Pipeline error: {e1}")
+                print(f"Manual error: {e2}")
                 
-                # Approach 3: Try pipeline approach
-                try:
-                    from transformers import pipeline
-                    
-                    print("📦 Falling back to pipeline approach...")
-                    self.pipe = pipeline(
-                        "text-generation",
-                        model="PULSE-ECG/PULSE-7B",
-                        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                        device=0 if torch.cuda.is_available() else -1,
-                        trust_remote_code=True,
-                        model_kwargs={
-                            "low_cpu_mem_usage": True,
-                            "use_safetensors": True
-                        }
-                    )
-                    self.use_pipeline = True
-                    print("✅ Model loaded via pipeline!")
-                    
-                except Exception as e3:
-                    print(f"⚠️ Pipeline approach failed: {e3}")
-                    
-                    # Approach 4: Manual loading with tokenizer + model
-                    try:
-                        from transformers import AutoTokenizer, AutoModelForCausalLM
-                        
-                        print("📦 Attempting manual loading with AutoModelForCausalLM...")
-                        self.tokenizer = AutoTokenizer.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
-                        self.model = AutoModelForCausalLM.from_pretrained(
-                            "PULSE-ECG/PULSE-7B",
-                            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                            device_map="auto",
-                            low_cpu_mem_usage=True,
-                            trust_remote_code=True
-                        )
-                        
-                        # Fix padding token if missing
-                        if self.tokenizer.pad_token is None:
-                            self.tokenizer.pad_token = self.tokenizer.eos_token
-                            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-                        
-                        self.model.eval()
-                        self.use_pipeline = False
-                        print("✅ Model loaded manually with tokenizer!")
-                        
-                    except Exception as e4:
-                        print(f"⚠️ Manual approach also failed: {e4}")
-                        
-                        # Final attempt: Try with custom architecture loading
-                        try:
-                            print("📦 Final attempt: Loading with custom architecture support...")
-                            
-                            # This approach loads the model with full trust_remote_code
-                            # and lets the model define its own architecture
-                            from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-                            
-                            # Load config first to understand the model
-                            config = AutoConfig.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
-                            print(f"🔧 Model config loaded: {config.model_type}")
-                            
-                            # Try to load with the config
-                            self.tokenizer = AutoTokenizer.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
-                            self.model = AutoModelForCausalLM.from_pretrained(
-                                "PULSE-ECG/PULSE-7B",
-                                config=config,
-                                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                                device_map="auto",
-                                low_cpu_mem_usage=True,
-                                trust_remote_code=True
-                            )
-                            
-                            # Fix padding token if missing
-                            if self.tokenizer.pad_token is None:
-                                self.tokenizer.pad_token = self.tokenizer.eos_token
-                                self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-                            
-                            self.model.eval()
-                            self.use_pipeline = False
-                            print("✅ Model loaded with custom architecture support!")
-                            
-                        except Exception as e5:
-                            print(f"⚠️ Custom approach also failed: {e5}")
-                            
-                            # Ultra-final attempt: Try to use the model's own files
-                            try:
-                                print("📦 Ultra-final attempt: Using model's custom implementation...")
-                                
-                                # Force download and use model's own implementation
-                                from transformers.utils import cached_file
-                                import importlib.util
-                                import os
-                                
-                                # Try to get the modeling file from the model repo
-                                modeling_file = cached_file("PULSE-ECG/PULSE-7B", "modeling_llava.py", _raise_exceptions_for_missing_entries=False)
-                                
-                                if modeling_file and os.path.exists(modeling_file):
-                                    print(f"🔧 Found custom modeling file: {modeling_file}")
-                                    
-                                    # Load the module
-                                    spec = importlib.util.spec_from_file_location("modeling_llava", modeling_file)
-                                    modeling_module = importlib.util.module_from_spec(spec)
-                                    spec.loader.exec_module(modeling_module)
-                                    
-                                    # Try to find the main model class
-                                    if hasattr(modeling_module, 'LlavaLlamaForCausalLM'):
-                                        print("🔧 Using LlavaLlamaForCausalLM from custom implementation")
-                                        
-                                        from transformers import AutoTokenizer
-                                        self.tokenizer = AutoTokenizer.from_pretrained("PULSE-ECG/PULSE-7B", trust_remote_code=True)
-                                        self.model = modeling_module.LlavaLlamaForCausalLM.from_pretrained(
-                                            "PULSE-ECG/PULSE-7B",
-                                            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                                            device_map="auto",
-                                            low_cpu_mem_usage=True,
-                                            trust_remote_code=True
-                                        )
-                                        
-                                        # Fix padding token if missing
-                                        if self.tokenizer.pad_token is None:
-                                            self.tokenizer.pad_token = self.tokenizer.eos_token
-                                            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-                                        
-                                        self.model.eval()
-                                        self.use_pipeline = False
-                                        print("✅ Model loaded with custom implementation!")
-                                    else:
-                                        raise Exception("LlavaLlamaForCausalLM not found in custom modeling file")
-                                else:
-                                    raise Exception("Custom modeling file not found")
-                                    
-                            except Exception as e6:
-                                print(f"😓 All loading approaches failed!")
-                                print(f"Error 1 (AutoModel): {e1}")
-                                print(f"Error 2 (LLaVA): {e2}")
-                                print(f"Error 3 (Pipeline): {e3}")
-                                print(f"Error 4 (Manual): {e4}")
-                                print(f"Error 5 (Custom): {e5}")
-                                print(f"Error 6 (Ultra-Custom): {e6}")
-                                
-                                print("\n💡 SOLUTION: This model requires development transformers:")
-                                print("   Requirements.txt should contain:")
-                                print("   git+https://github.com/huggingface/transformers.git")
-                                print("\n🔄 Current status: Using fallback text-only mode")
-                                
-                                # Complete failure - set everything to None
-                                self.model = None
-                                self.processor = None
-                                self.tokenizer = None
-                                self.pipe = None
-                                self.use_pipeline = None
+                self.model = None
+                self.processor = None
+                self.tokenizer = None
+                self.pipe = None
+                self.use_pipeline = None
         
         # Final status report
         print("\n🔍 Model Loading Status Report:")
@@ -495,9 +325,9 @@ class EndpointHandler:
                     
                     if image:
                         print(f"✅ Image processed successfully: {image.size[0]}x{image.size[1]} pixels")
-                        # Store the image for later use with LLaVA model
-                        # Don't modify the text prompt - let LLaVA handle the image-text combination
-                        print(f"🖼️ Image will be passed to model: {image.size} pixels")
+                        # For now, add image description to text (text-only mode)
+                        text = f"[ECG Image Analysis Request - Image Size: {image.size[0]}x{image.size[1]} pixels] {text}"
+                        print(f"🔄 Running in text-only mode with image context")
             else:
                 # Simple string input
                 text = str(inputs)
@@ -596,155 +426,53 @@ class EndpointHandler:
                     
                     return [result_dict]
             
-            # Manual generation mode (LLaVA with vision support)
-            elif self.model is not None:
-                if hasattr(self, 'processor') and self.processor is not None:
-                    # PULSE LLaVA model with vision support
-                    print("🔥 Using PULSE LLaVA model with vision capabilities")
-                    
-                    if image is not None:
-                        print(f"🖼️ PULSE LLaVA processing image + text: '{text[:50]}...'")
-                        
-                        # Use PULSE LLaVA's eval_model approach
-                        try:
-                            from llava.eval.run_llava import eval_model
-                            from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-                            from llava.conversation import conv_templates, SeparatorStyle
-                            from llava.mm_utils import tokenizer_image_token, process_images, get_model_name_from_path
-                            
-                            # Process the image
-                            image_tensor = process_images([image], self.image_processor, self.model.config)
-                            image_tensor = image_tensor.to(self.model.device, dtype=torch.float16)
-                            
-                            # Prepare conversation
-                            conv_mode = "llava_v1"  # Default conversation mode
-                            conv = conv_templates[conv_mode].copy()
-                            
-                            # Add image token to the conversation
-                            inp = DEFAULT_IMAGE_TOKEN + '\n' + text
-                            conv.append_message(conv.roles[0], inp)
-                            conv.append_message(conv.roles[1], None)
-                            prompt = conv.get_prompt()
-                            
-                            # Tokenize
-                            input_ids = tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').unsqueeze(0).to(self.model.device)
-                            
-                            # Generate
-                            with torch.inference_mode():
-                                output_ids = self.model.generate(
-                                    input_ids,
-                                    images=image_tensor,
-                                    do_sample=do_sample,
-                                    temperature=temperature,
-                                    top_p=top_p,
-                                    max_new_tokens=max_new_tokens,
-                                    use_cache=True
-                                )
-                            
-                            # Decode response
-                            generated_text = self.tokenizer.decode(output_ids[0, input_ids.shape[1]:], skip_special_tokens=True).strip()
-                            print(f"✅ PULSE LLaVA generated response: {len(generated_text)} characters")
-                            
-                        except ImportError as e:
-                            print(f"⚠️ PULSE LLaVA modules missing: {e}")
-                            print("🔄 Falling back to standard processor...")
-                            
-                            # Fallback to standard processing
-                            inputs = self.processor(text, image, return_tensors="pt")
-                            inputs = {k: v.to(self.device) for k, v in inputs.items()}
-                            
-                            with torch.no_grad():
-                                outputs = self.model.generate(
-                                    **inputs,
-                                    max_new_tokens=max_new_tokens,
-                                    temperature=temperature,
-                                    top_p=top_p,
-                                    do_sample=do_sample,
-                                    repetition_penalty=repetition_penalty,
-                                )
-                            
-                            generated_text = self.processor.decode(outputs[0], skip_special_tokens=True)
-                            if text in generated_text:
-                                generated_text = generated_text.replace(text, "").strip()
-                                
-                    else:
-                        # Text-only processing
-                        print(f"📝 PULSE LLaVA processing text-only: '{text[:50]}...'")
-                        
-                        # Use tokenizer for text-only
-                        input_ids = self.tokenizer.encode(text, return_tensors="pt").to(self.device)
-                        
-                        with torch.no_grad():
-                            outputs = self.model.generate(
-                                input_ids,
-                                max_new_tokens=max_new_tokens,
-                                temperature=temperature,
-                                top_p=top_p,
-                                do_sample=do_sample,
-                                repetition_penalty=repetition_penalty,
-                            )
-                        
-                        generated_text = self.tokenizer.decode(outputs[0, input_ids.shape[1]:], skip_special_tokens=True).strip()
-                    
-                    # Clean up any remaining stop sequences
-                    for stop_seq in stop_sequences:
-                        if generated_text.endswith(stop_seq):
-                            generated_text = generated_text[:-len(stop_seq)].rstrip()
-                    
-                    print(f"✅ Generated response: {len(generated_text)} characters")
-                    
-                else:
-                    # Fallback to text-only processing
-                    print("⚠️ No processor available, falling back to tokenizer-based text processing")
-                    
-                    # Check if we have tokenizer available
-                    if not hasattr(self, 'tokenizer') or self.tokenizer is None:
-                        print("❌ No tokenizer available either")
-                        return [{
-                            "generated_text": "",
-                            "error": "No tokenizer available for text processing",
-                            "model": "PULSE-7B",
-                            "processing_method": "manual",
-                            "success": False
-                        }]
-                    
-                    encoded = self.tokenizer(
-                        text,
-                        return_tensors="pt",
-                        truncation=True,
-                        max_length=4096
+            # Manual generation mode (text-only with tokenizer)
+            elif self.model is not None and self.tokenizer is not None:
+                print(f"🔥 Using manual generation with tokenizer: '{text[:50]}...'")
+                
+                # Simple tokenizer-based generation
+                encoded = self.tokenizer(
+                    text,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=4096
+                )
+                
+                input_ids = encoded["input_ids"].to(self.device)
+                attention_mask = encoded.get("attention_mask")
+                if attention_mask is not None:
+                    attention_mask = attention_mask.to(self.device)
+                
+                with torch.no_grad():
+                    outputs = self.model.generate(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        max_new_tokens=max_new_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        do_sample=do_sample,
+                        repetition_penalty=repetition_penalty,
+                        pad_token_id=self.tokenizer.pad_token_id,
+                        eos_token_id=self.tokenizer.eos_token_id
                     )
-                    
-                    input_ids = encoded["input_ids"].to(self.device)
-                    attention_mask = encoded.get("attention_mask")
-                    if attention_mask is not None:
-                        attention_mask = attention_mask.to(self.device)
-                    
-                    with torch.no_grad():
-                        outputs = self.model.generate(
-                            input_ids=input_ids,
-                            attention_mask=attention_mask,
-                            max_new_tokens=max_new_tokens,
-                            temperature=temperature,
-                            top_p=top_p,
-                            do_sample=do_sample,
-                            repetition_penalty=repetition_penalty,
-                            pad_token_id=self.tokenizer.pad_token_id,
-                            eos_token_id=self.tokenizer.eos_token_id
-                        )
-                    
-                    generated_ids = outputs[0][input_ids.shape[-1]:]
-                    generated_text = self.tokenizer.decode(
-                        generated_ids,
-                        skip_special_tokens=True,
-                        clean_up_tokenization_spaces=True
-                    )
+                
+                generated_ids = outputs[0][input_ids.shape[-1]:]
+                generated_text = self.tokenizer.decode(
+                    generated_ids,
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=True
+                )
+                
+                # Clean up any remaining stop sequences
+                for stop_seq in stop_sequences:
+                    if generated_text.endswith(stop_seq):
+                        generated_text = generated_text[:-len(stop_seq)].rstrip()
                 
                 success = True
                 result = {
                     "generated_text": generated_text.strip(),
                     "model": "PULSE-7B",
-                    "processing_method": "llava_vision" if (hasattr(self, 'processor') and self.processor is not None) else "manual"
+                    "processing_method": "manual_text_only"
                 }
                 
                 # Add Turkish commentary if requested
